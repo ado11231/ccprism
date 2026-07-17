@@ -18,6 +18,10 @@ export interface ResolvedTree {
   // sidechain to the Task call that spawned it happens at the event
   // layer, where tool call content is parsed.
   sidechains: RawLine[][];
+  // Lines on abandoned branches, for example retries. They stay out
+  // of the transcript but their api calls still cost money, so the
+  // event layer records their usage.
+  inactive: RawLine[];
   stats: TreeStats;
 }
 
@@ -64,7 +68,7 @@ export function resolveTree(lines: RawLine[]): ResolvedTree {
     if (leaf !== undefined) stats.leafSource = "last-line";
   }
   if (leaf === undefined) {
-    return { branch: [], sidechains: [], stats };
+    return { branch: [], sidechains: [], inactive: [], stats };
   }
 
   // Children in file order, so the newest retry of a branch comes last.
@@ -139,11 +143,13 @@ export function resolveTree(lines: RawLine[]): ResolvedTree {
 
   const active = new Set<RawLine>([...branch]);
   for (const group of sidechains) for (const member of group) active.add(member);
+  const inactive: RawLine[] = [];
   for (const line of lines) {
-    if (line.uuid !== undefined && !active.has(line)) stats.inactiveLines += 1;
+    if (line.uuid !== undefined && !active.has(line)) inactive.push(line);
   }
+  stats.inactiveLines = inactive.length;
 
-  return { branch, sidechains, stats };
+  return { branch, sidechains, inactive, stats };
 }
 
 function collectSubtreeInFileOrder(
