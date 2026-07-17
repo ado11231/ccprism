@@ -6,6 +6,9 @@ export interface RawLine {
   type: string;
   uuid: string | undefined;
   parentUuid: string | null;
+  // Compaction starts a fresh tree in the same file. The new root
+  // points back at the old conversation through this field.
+  logicalParentUuid: string | undefined;
   isSidechain: boolean;
   timestamp: string | undefined;
   leafUuid: string | undefined;

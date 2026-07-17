@@ -43,6 +43,19 @@ parser must keep every line that has a uuid, whatever its type, or walking
 back from `leafUuid` breaks. Unknown future types with a uuid are kept for
 the same reason and only counted for `doctor`.
 
+**Compaction fact (verified against real logs 2026-07-17):** compaction
+starts a fresh physical tree inside the same file. The new root is a
+`system` line with `subtype: "compact_boundary"`, `parentUuid: null`, and a
+`logicalParentUuid` pointing at the pre compact conversation. The branch
+walk must follow `logicalParentUuid` when `parentUuid` is null, or
+everything before the compaction is silently dropped (verified: 1845 of
+2412 lines lost in one real session). The boundary line also carries
+`compactMetadata` with pre and post token counts.
+
+The session's own uuid can also appear as a companion directory next to the
+jsonl file, holding `tool-results/*.txt` with large tool outputs stored out
+of line.
+
 Session metadata worth extracting: `version` (Claude Code version), `cwd`,
 `gitBranch`, timestamps (→ duration, gaps, turns).
 

@@ -40,6 +40,10 @@ function toRawLine(line: Record<string, unknown>, type: string): RawLine {
     type,
     uuid: typeof line.uuid === "string" ? line.uuid : undefined,
     parentUuid: typeof line.parentUuid === "string" ? line.parentUuid : null,
+    logicalParentUuid:
+      typeof line.logicalParentUuid === "string"
+        ? line.logicalParentUuid
+        : undefined,
     isSidechain: line.isSidechain === true,
     timestamp: typeof line.timestamp === "string" ? line.timestamp : undefined,
     leafUuid: typeof line.leafUuid === "string" ? line.leafUuid : undefined,

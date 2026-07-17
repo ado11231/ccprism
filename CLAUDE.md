@@ -42,7 +42,7 @@ Code tokens went, and shows you any session as a readable transcript.*
 - **TypeScript**, not Python — the Claude Code tooling ecosystem is
   npm-centric.
 
-## Architecture (see design.md for detail)
+## Architecture (see docs/design.md for detail)
 
 Three internal modules, one dependency direction:
 
@@ -73,6 +73,6 @@ parser  →  cost engine  →  renderers (dashboard, transcript)
 
 ## Doc map
 
-- `design.md` — data format, parser event model, cost math, rendering spec,
-  CLI command/flag surface
-- `roadmap.md` — phases 0–3 with done-when criteria, backlog
+- `docs/design.md` — data format, parser event model, cost math, rendering
+  spec, CLI command/flag surface
+- `docs/roadmap.md` — phases 0–3 with done-when criteria, backlog
