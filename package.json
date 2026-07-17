@@ -1,0 +1,40 @@
+{
+  "name": "ccprism",
+  "version": "0.0.1",
+  "description": "Token metrics and readable transcripts for Claude Code sessions",
+  "type": "module",
+  "license": "MIT",
+  "author": "Adnan Alagic",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ado11231/ccprism.git"
+  },
+  "bin": {
+    "ccprism": "dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}
