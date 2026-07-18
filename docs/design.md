@@ -129,7 +129,12 @@ Requirements:
   must copy the file first. On a frozen copy the parser matches jq exactly.
 - Differentiator metrics (beyond basic cost totals):
   - **Cache hit ratio** — cache_read vs total input; the real cost story
-  - **Cost per tool category** — attribute assistant-turn cost to the tools it invoked
+  - **Cost per tool category** — attribute assistant-turn cost to the tools it invoked.
+    **Attribution rule (implemented 2026-07-18):** a message's cost splits
+    evenly across its tool calls; messages with no tool calls land in a
+    `chat` bucket; messages on abandoned branches have no surviving events
+    so they also land in `chat`. The category sums always equal the total,
+    nothing is lost or double counted.
   - **Subagent vs main-thread spend** — via `isSidechain`
   - **Tool stats** — call counts, failure rates per tool
   - **Time** — session duration, turn count, longest gaps

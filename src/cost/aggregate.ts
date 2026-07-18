@@ -112,6 +112,10 @@ export interface SessionSummary {
   firstTimestamp: string | undefined;
   lastTimestamp: string | undefined;
   durationMs: number | undefined;
+  // Longest quiet stretch between consecutive events on the active
+  // branch. Long gaps mean the session sat open while the user was
+  // away, so duration alone overstates working time.
+  longestGapMs: number | undefined;
   // User messages on the active branch, meta lines excluded.
   turns: number;
   total: UsageRollup;
@@ -142,6 +146,21 @@ export function summarizeSession(
     if (Number.isFinite(span) && span >= 0) durationMs = span;
   }
 
+  let longestGapMs: number | undefined;
+  let previous: number | undefined;
+  for (const event of session.events) {
+    if (event.timestamp === undefined) continue;
+    const time = new Date(event.timestamp).getTime();
+    if (Number.isNaN(time)) continue;
+    if (previous !== undefined) {
+      const gap = time - previous;
+      if (gap > 0 && (longestGapMs === undefined || gap > longestGapMs)) {
+        longestGapMs = gap;
+      }
+    }
+    previous = time;
+  }
+
   return {
     sessionId: meta.sessionId,
     projectSlug: file.projectSlug,
@@ -153,6 +172,7 @@ export function summarizeSession(
     firstTimestamp: meta.firstTimestamp,
     lastTimestamp: meta.lastTimestamp,
     durationMs,
+    longestGapMs,
     turns: session.events.filter(
       (event) => event.kind === "user" && !event.isMeta,
     ).length,

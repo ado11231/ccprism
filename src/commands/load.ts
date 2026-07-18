@@ -5,7 +5,7 @@ import {
   discoverSessionFiles,
   type SessionFile,
 } from "../parser/discover.js";
-import type { MessageUsage } from "../parser/events.js";
+import type { ExtractedSession, MessageUsage } from "../parser/events.js";
 import { parseSessionFile } from "../parser/session.js";
 import type { TreeStats } from "../parser/tree.js";
 import type { ReadStats } from "../parser/types.js";
@@ -29,6 +29,9 @@ export interface TimeWindow {
 export interface LoadedSession {
   file: SessionFile;
   summary: SessionSummary;
+  // The full extraction, kept because tool attribution needs events
+  // and not just the usage ledger.
+  extracted: ExtractedSession;
   usage: MessageUsage[];
   readStats: ReadStats;
   treeStats: TreeStats;
@@ -84,6 +87,7 @@ export async function loadSessions(
     loaded.push({
       file,
       summary,
+      extracted: parsed.session,
       usage: parsed.session.usage,
       readStats: parsed.readStats,
       treeStats: parsed.treeStats,

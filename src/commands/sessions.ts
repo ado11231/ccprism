@@ -64,6 +64,7 @@ export async function runSessions(flags: SessionsFlags): Promise<number> {
             firstTimestamp: summary.firstTimestamp ?? null,
             lastTimestamp: summary.lastTimestamp ?? null,
             durationMs: summary.durationMs ?? null,
+            longestGapMs: summary.longestGapMs ?? null,
             turns: summary.turns,
             models: summary.models,
             rollup: windowGiven ? rollupOf(usage) : summary.total,

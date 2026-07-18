@@ -8,6 +8,11 @@ import {
 } from "../cost/aggregate.js";
 import { SYNTHETIC_MODEL } from "../cost/cost.js";
 import {
+  mergeToolBreakdowns,
+  toolBreakdown,
+  type ToolBreakdown,
+} from "../cost/tools.js";
+import {
   fmtPercent,
   fmtTokens,
   fmtUsd,
@@ -21,7 +26,6 @@ import {
   parseWindow,
   projectLabel,
   type CommandFlags,
-  type LoadedSession,
   type TimeWindow,
 } from "./load.js";
 
@@ -100,6 +104,19 @@ export async function runDashboard(flags: CommandFlags): Promise<number> {
   );
   const models = [...byModel.entries()].sort((a, b) => b[1].usd - a[1].usd);
 
+  // Subsets of the total, never additions to it.
+  const subagents = rollupOf(allUsage.filter((u) => u.isSidechain));
+  const retries = rollupOf(allUsage.filter((u) => !u.onActiveBranch));
+
+  const allowedIds = windowGiven
+    ? new Set(allUsage.map((u) => u.messageId))
+    : undefined;
+  const tools: ToolBreakdown = new Map();
+  for (const session of sessions) {
+    mergeToolBreakdowns(tools, toolBreakdown(session.extracted, allowedIds));
+  }
+  const toolRows = [...tools.entries()].sort((a, b) => b[1].usd - a[1].usd);
+
   const sessionCount = windowGiven
     ? windowed.filter((w) => w.usage.length > 0).length
     : sessions.length;
@@ -119,12 +136,15 @@ export async function runDashboard(flags: CommandFlags): Promise<number> {
           cacheHitRatio: cacheHitRatio(total),
           today,
           week,
+          subagents,
+          retries,
           byProject: projects.map((p) => ({
             name: p.name,
             sessions: p.sessions,
             ...p.rollup,
           })),
           byModel: models.map(([model, rollup]) => ({ model, ...rollup })),
+          byTool: toolRows.map(([category, stats]) => ({ category, ...stats })),
         },
         null,
         2,
@@ -133,21 +153,39 @@ export async function runDashboard(flags: CommandFlags): Promise<number> {
     return 0;
   }
 
-  printDashboard(sessions, sessionCount, total, today, week, projects, models, windowGiven, flags);
+  printDashboard(
+    {
+      sessionCount,
+      total,
+      today,
+      week,
+      subagents,
+      retries,
+      projects,
+      models,
+      toolRows,
+      windowGiven,
+    },
+    flags,
+  );
   return 0;
 }
 
-function printDashboard(
-  sessions: LoadedSession[],
-  sessionCount: number,
-  total: UsageRollup,
-  today: UsageRollup,
-  week: UsageRollup,
-  projects: ProjectRow[],
-  models: [string, UsageRollup][],
-  windowGiven: boolean,
-  flags: CommandFlags,
-): void {
+interface DashboardData {
+  sessionCount: number;
+  total: UsageRollup;
+  today: UsageRollup;
+  week: UsageRollup;
+  subagents: UsageRollup;
+  retries: UsageRollup;
+  projects: ProjectRow[];
+  models: [string, UsageRollup][];
+  toolRows: [string, { calls: number; failures: number; usd: number }][];
+  windowGiven: boolean;
+}
+
+function printDashboard(data: DashboardData, flags: CommandFlags): void {
+  const { sessionCount, total, today, week, subagents, retries, projects, models, toolRows, windowGiven } = data;
   const c = makeStyle(colorEnabled(flags.color));
   const lines: string[] = [];
   const dot = c.dim("·");
@@ -171,6 +209,14 @@ function printDashboard(
   for (const line of renderTable(spendRows, ["left", "right", "right", "right", "right"])) {
     lines.push(`  ${line}`);
   }
+  if (subagents.messages > 0 || retries.messages > 0) {
+    lines.push(
+      c.dim(
+        `  of the total: subagents ${fmtUsd(subagents.usd)} (${subagents.messages} msgs)` +
+          ` · retries ${fmtUsd(retries.usd)} (${retries.messages} msgs)`,
+      ),
+    );
+  }
   lines.push("");
 
   const projectRows: string[][] = [["project", "sessions", "cost"]];
@@ -189,6 +235,20 @@ function printDashboard(
   const modelTable = renderTable(modelRows, ["left", "right", "right"]);
   lines.push(`  ${c.dim(modelTable[0] ?? "")}`);
   for (const line of modelTable.slice(1)) lines.push(`  ${line}`);
+  lines.push("");
+
+  const toolTableRows: string[][] = [["tool", "calls", "fails", "cost"]];
+  for (const [category, stats] of toolRows) {
+    toolTableRows.push([
+      category,
+      stats.calls === 0 ? "-" : String(stats.calls),
+      stats.calls === 0 ? "-" : String(stats.failures),
+      fmtUsd(stats.usd),
+    ]);
+  }
+  const toolTable = renderTable(toolTableRows, ["left", "right", "right", "right"]);
+  lines.push(`  ${c.dim(toolTable[0] ?? "")}`);
+  for (const line of toolTable.slice(1)) lines.push(`  ${line}`);
 
   if (total.unknownModels.length > 0) {
     lines.push("");

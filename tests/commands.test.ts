@@ -66,6 +66,18 @@ describe("dashboard", () => {
     expect(out.byModel[0].model).toBe("claude-opus-4-8");
     expect(out.byProject).toHaveLength(2);
     expect(out.cacheHitRatio).toBeGreaterThan(0);
+    // The compact fixture has tool calls, so byTool must carry cost
+    // in tool buckets and a chat bucket for text only messages.
+    const categories = out.byTool.map((t: { category: string }) => t.category);
+    expect(categories).toContain("chat");
+    expect(out.byTool.length).toBeGreaterThan(1);
+    const toolUsd = out.byTool.reduce(
+      (sum: number, t: { usd: number }) => sum + t.usd,
+      0,
+    );
+    expect(toolUsd).toBeCloseTo(out.total.usd, 6);
+    expect(out.subagents.messages).toBeGreaterThanOrEqual(0);
+    expect(out.retries.messages).toBeGreaterThanOrEqual(0);
   });
 
   it("exits 2 when there are no sessions", async () => {
