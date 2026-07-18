@@ -50,6 +50,19 @@ export function addToRollup(rollup: UsageRollup, entry: MessageUsage): void {
   }
 }
 
+export function mergeRollups(into: UsageRollup, from: UsageRollup): void {
+  into.messages += from.messages;
+  into.usd += from.usd;
+  into.tokens.input += from.tokens.input;
+  into.tokens.output += from.tokens.output;
+  into.tokens.cacheRead += from.tokens.cacheRead;
+  into.tokens.cacheWrite5m += from.tokens.cacheWrite5m;
+  into.tokens.cacheWrite1h += from.tokens.cacheWrite1h;
+  for (const model of from.unknownModels) {
+    if (!into.unknownModels.includes(model)) into.unknownModels.push(model);
+  }
+}
+
 export function rollupOf(entries: Iterable<MessageUsage>): UsageRollup {
   const rollup = emptyRollup();
   for (const entry of entries) addToRollup(rollup, entry);

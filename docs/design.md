@@ -52,6 +52,12 @@ everything before the compaction is silently dropped (verified: 1845 of
 2412 lines lost in one real session). The boundary line also carries
 `compactMetadata` with pre and post token counts.
 
+**Stub session fact (verified 2026-07-17):** a session file can hold only
+metadata lines (`agent-name` and `ai-title`) with no tree at all, left
+behind when a session is created and immediately abandoned. These parse to
+zero kept lines and zero usage. `doctor` treats them as empty sessions,
+not parse problems.
+
 The session's own uuid can also appear as a companion directory next to the
 jsonl file, holding `tool-results/*.txt` with large tool outputs stored out
 of line.
@@ -223,6 +229,8 @@ Global (every command):
 
 `view` only: `--full` (expand raw commands, tool outputs, thinking),
 `--markdown` (Phase 3), `--costs` (per-message cost badges).
+
+`sessions` only: `--limit <n>` (default 20, 0 shows all).
 
 ### UX rules
 
