@@ -113,6 +113,14 @@ Requirements:
   (the largest local session: 466,744 tokens at 1h, zero at 5m). The 5m
   fallback for missing splits therefore only matters for older logs.
 - Aggregators: by session, day, project, model
+- **Cross-file dedup is unnecessary (verified 2026-07-17):** message ids do
+  not repeat across session files (checked all 41 local sessions, 3,873
+  ids), so per-session rollups sum cleanly with no global dedup. Resumed
+  conversations get fresh api message ids.
+- **Live sessions grow mid-read (verified 2026-07-17):** the active
+  session's file is appended between reads, so two measurements moments
+  apart legitimately differ. Harmless for aggregation; snapshot comparisons
+  must copy the file first. On a frozen copy the parser matches jq exactly.
 - Differentiator metrics (beyond basic cost totals):
   - **Cache hit ratio** — cache_read vs total input; the real cost story
   - **Cost per tool category** — attribute assistant-turn cost to the tools it invoked
