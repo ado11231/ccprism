@@ -103,6 +103,15 @@ Requirements:
   observed in real logs (this machine: `claude-opus-4-8`, `claude-fable-5`).
   Model ID `<synthetic>` appears in logs for locally-generated placeholder
   messages — **skip it in costing entirely** (zero cost, not "unknown").
+- **Seeded 2026-07-17** (`src/cost/pricing.json`) with the full current
+  lineup: Fable 5 / Mythos 5 ($10/$50), Opus 4.6 to 4.8 ($5/$25), Sonnet 4.6
+  and 5 ($3/$15), Haiku 4.5 ($1/$5); cache read is 0.1x input, writes are
+  1.25x (5m) and 2x (1h). Rescan of all local logs the same day confirmed
+  only `claude-opus-4-8`, `claude-fable-5`, and `<synthetic>` appear.
+- **Cache write tier in practice (verified 2026-07-17):** recent Claude Code
+  sessions on this machine write cache entries exclusively at the 1h tier
+  (the largest local session: 466,744 tokens at 1h, zero at 5m). The 5m
+  fallback for missing splits therefore only matters for older logs.
 - Aggregators: by session, day, project, model
 - Differentiator metrics (beyond basic cost totals):
   - **Cache hit ratio** — cache_read vs total input; the real cost story
