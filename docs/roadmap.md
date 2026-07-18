@@ -16,7 +16,7 @@ Each phase ships something usable on its own.
 - **Done when:** parser turns any local session into a clean event array,
   tests green.
 
-## Phase 1 — Metrics
+## Phase 1 — Metrics (done 2026-07-18)
 
 - `pricing.json` + five-tier cost function (unknown models degrade gracefully;
   cache writes split 5m/1h per design.md)
@@ -27,7 +27,14 @@ Each phase ships something usable on its own.
 - `doctor` command (parse health: skipped lines, unknown models)
 - `--json` everywhere
 - **Done when:** numbers match a manual spot-check against one real session.
+  Checked 2026-07-18 against the test project session (52e94664): cost,
+  every token tier, message count, tool calls, and duration matched a jq
+  cross check exactly. The flat count said 7 turns where ccprism said 6,
+  and the extra line was a duplicated prompt on an abandoned branch, so
+  the tree aware number is the correct one.
 - *Already a usable tool at this point.*
+- Deferred to the polish pass: interruption notices ("[Request interrupted
+  by user]") currently count as turns; decide whether they should.
 
 ## Phase 2 — Transcript viewer
 
