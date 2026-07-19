@@ -61,17 +61,18 @@ function twoSided(
   return styledLeft + " ".repeat(Math.max(gap, 1)) + styledRight;
 }
 
-function truncate(text: string, width: number): string {
+function truncate(text: string, width: number, ellipsis: string): string {
   if (displayWidth(text) <= width) return text;
+  const room = width - displayWidth(ellipsis);
   let out = "";
   let used = 0;
   for (const char of text) {
     const charWidth = displayWidth(char);
-    if (used + charWidth > width - 1) break;
+    if (used + charWidth > room) break;
     out += char;
     used += charWidth;
   }
-  return `${out}…`;
+  return `${out}${ellipsis}`;
 }
 
 function toolColor(c: Style, category: ToolCategory): (text: string) => string {
@@ -175,7 +176,7 @@ export function renderHeader(
   const parts = [
     models === "" ? undefined : models,
     cost,
-    `${summary.turns} turns`,
+    `${summary.turns} ${summary.turns === 1 ? "turn" : "turns"}`,
     summary.durationMs === undefined ? undefined : fmtDuration(summary.durationMs),
   ].filter((part): part is string => part !== undefined);
 
@@ -208,7 +209,7 @@ function renderUserAnchor(
       }
     } else {
       const first = user.text.split("\n")[0] ?? "";
-      out.push(c.dim(`${base}${INDENT}${truncate(first, ctx.width - depth * 2 - 2)}`));
+      out.push(c.dim(`${base}${INDENT}${truncate(first, ctx.width - depth * 2 - 2, g.ellipsis)}`));
     }
     return;
   }
@@ -261,10 +262,10 @@ function renderResult(item: ToolItem, depth: number, ctx: RenderContext, out: st
   if (!ctx.full && !shouldPreview(item)) return;
   const preview = ctx.full ? lines : lines.slice(0, RESULT_PREVIEW_LINES);
   for (const line of preview) {
-    out.push(c.dim(`${base}${truncate(line, available)}`.trimEnd()));
+    out.push(c.dim(`${base}${truncate(line, available, ctx.g.ellipsis)}`.trimEnd()));
   }
   if (!ctx.full && lines.length > preview.length) {
-    out.push(c.dim(`${base}(… ${lines.length - preview.length} more lines)`));
+    out.push(c.dim(`${base}(${ctx.g.ellipsis} ${lines.length - preview.length} more lines)`));
   }
 }
 
@@ -285,7 +286,7 @@ function renderToolItem(item: ToolItem, depth: number, ctx: RenderContext, out: 
   const available = ctx.width - depth * 2;
 
   const { label, detail } = toolLabel(item.call, ctx.cwd);
-  const labelText = truncate(label, available - displayWidth(glyph) - 1 - 8);
+  const labelText = truncate(label, available - displayWidth(glyph) - 1 - 8, g.ellipsis);
   const plainLeft = `${base}${glyph} ${labelText}`;
   const styledLeft = `${base}${color(glyph)} ${c.bold(labelText)}`;
   const badge = ctx.costs && item.usd !== undefined ? fmtUsd(item.usd) : "";
@@ -300,10 +301,10 @@ function renderToolItem(item: ToolItem, depth: number, ctx: RenderContext, out: 
       }
     } else {
       const first = detail.split("\n")[0] ?? "";
-      const suffix = detail.includes("\n") ? " …" : "";
+      const suffix = detail.includes("\n") ? ` ${g.ellipsis}` : "";
       out.push(
         c.dim(
-          `${connectorPad}${g.connector} ${truncate(first, room - suffix.length)}${suffix}`,
+          `${connectorPad}${g.connector} ${truncate(first, room - displayWidth(suffix), g.ellipsis)}${suffix}`,
         ),
       );
     }
@@ -334,7 +335,7 @@ function renderItem(item: TurnItem, depth: number, ctx: RenderContext, out: stri
       out.push(
         thinkingStyle(
           ctx,
-          `${base}${ctx.g.thinking} thinking (… ${lines.length} ${lines.length === 1 ? "line" : "lines"})`,
+          `${base}${ctx.g.thinking} thinking (${ctx.g.ellipsis} ${lines.length} ${lines.length === 1 ? "line" : "lines"})`,
         ),
       );
     }

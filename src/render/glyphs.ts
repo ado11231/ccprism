@@ -14,6 +14,8 @@ export interface GlyphSet {
   rule: string;
   // Separator between badge fields.
   dot: string;
+  // Marks truncation, both inline and in collapse counts.
+  ellipsis: string;
   tools: Record<ToolCategory, string>;
 }
 
@@ -24,6 +26,7 @@ export const UNICODE_GLYPHS: GlyphSet = {
   connector: "└",
   rule: "─",
   dot: "·",
+  ellipsis: "…",
   tools: {
     bash: "⚡",
     edit: "✎",
@@ -43,6 +46,7 @@ export const ASCII_GLYPHS: GlyphSet = {
   connector: "\\_",
   rule: "-",
   dot: ".",
+  ellipsis: "...",
   tools: {
     bash: "$",
     edit: "+",

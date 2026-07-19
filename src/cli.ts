@@ -3,15 +3,19 @@ import { version } from "../package.json";
 import { runDashboard } from "./commands/dashboard.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSessions } from "./commands/sessions.js";
+import { runView } from "./commands/view.js";
 import type { CommandFlags } from "./commands/load.js";
 
 interface RawOpts {
   json?: boolean;
   color?: boolean;
+  ascii?: boolean;
   project?: string;
   since?: string;
   until?: string;
   limit?: string;
+  full?: boolean;
+  costs?: boolean;
 }
 
 function toFlags(opts: RawOpts): CommandFlags {
@@ -30,6 +34,7 @@ function withGlobalFlags(command: Command): Command {
   return command
     .option("--json", "machine readable output")
     .option("--no-color", "plain output, also implied by NO_COLOR or piping")
+    .option("--ascii", "swap unicode glyphs for ascii")
     .option("--project <path>", "only sessions from this project directory")
     .option("--since <date>", "window start, YYYY-MM-DD or an ISO timestamp")
     .option("--until <date>", "window end, inclusive");
@@ -61,12 +66,20 @@ export function buildProgram(): Command {
       process.exitCode = await runSessions({ ...toFlags(opts), limit });
     });
 
-  program
-    .command("view")
+  withGlobalFlags(program.command("view"))
     .description("Render a session transcript, latest session if id omitted")
     .argument("[id]", "session id, unambiguous prefixes accepted")
-    .action(() => {
-      console.log("view: not implemented yet");
+    .option("--full", "expand raw commands, tool outputs, and thinking")
+    .option("--costs", "per call cost badges on tool lines")
+    .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
+      const opts = command.optsWithGlobals() as RawOpts;
+      process.exitCode = await runView({
+        ...toFlags(opts),
+        id,
+        full: opts.full === true,
+        costs: opts.costs === true,
+        ascii: opts.ascii === true,
+      });
     });
 
   withGlobalFlags(program.command("doctor"))
