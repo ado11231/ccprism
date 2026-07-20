@@ -3,6 +3,7 @@ import { version } from "../package.json";
 import { runDashboard } from "./commands/dashboard.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSessions } from "./commands/sessions.js";
+import { runStatusline } from "./commands/statusline.js";
 import { runView } from "./commands/view.js";
 import type { CommandFlags } from "./commands/load.js";
 
@@ -80,6 +81,16 @@ export function buildProgram(): Command {
         costs: opts.costs === true,
         ascii: opts.ascii === true,
       });
+    });
+
+  withGlobalFlags(program.command("statusline"))
+    .description(
+      "One line of cost, context, and turns for Claude Code's custom statusLine",
+    )
+    .action(async (_opts: RawOpts, command: Command) => {
+      process.exitCode = await runStatusline(
+        toFlags(command.optsWithGlobals() as RawOpts),
+      );
     });
 
   withGlobalFlags(program.command("doctor"))

@@ -215,10 +215,36 @@ telemetry, no config file, no state; uninstall leaves zero trace.
 ccprism                    dashboard: today / week, per project & model
 ccprism sessions           recent sessions: cost, duration, turns, model
 ccprism view [id]          transcript (latest session if id omitted)
+ccprism statusline         one line for Claude Code's custom statusLine
 ccprism doctor             parse health: skipped lines, unknown model IDs
 ```
 
-Phase 3 adds `view --markdown`, `statusline`, `watch`; later, `find <query>`.
+Phase 3 adds `view --markdown`, `watch`; later, `find <query>`.
+
+#### `statusline`
+
+Built for Claude Code's `statusLine` setting, which runs a command after each
+assistant message and pipes session JSON on stdin (schema:
+code.claude.com/docs/en/statusline). The one field we use is
+`transcript_path` — it names the exact session file, so there is no guessing
+by mtime. We parse that file with the normal pipeline and print **ccprism's
+own** cost, so the number matches `view` and the dashboard rather than echoing
+Claude Code's `cost.total_cost_usd`. Run from a shell with no piped input it
+falls back to the newest session, which makes it previewable.
+
+Output is one line: `model · $cost · <ctx> ctx · <turns> turns`, where `ctx`
+is the input side of the most recent main-thread API call (fresh input + cache
+reads + cache writes, output excluded — the same basis as Claude Code's
+`used_percentage`). Plain text: stdout is always captured by Claude Code, so
+color stays off, and the line must survive with no styling anyway. A statusLine
+command must never break its host, so once Claude Code has invoked us every
+failure path prints best effort and exits 0.
+
+Settings snippet:
+
+```json
+{ "statusLine": { "type": "command", "command": "ccprism statusline" } }
+```
 
 ### Flags
 

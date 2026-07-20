@@ -35,11 +35,22 @@ npm install -g ccprism
 ccprism            dashboard for today and this week, per project and model
 ccprism sessions   recent sessions with cost, duration, turns, and model
 ccprism view [id]  render a session transcript, latest session if id omitted
+ccprism statusline one line of cost, context, and turns for the active session
 ccprism doctor     parse health: skipped lines and unknown model ids
 ```
 
 Every command supports `--json` for machine readable output. Color is
 stripped automatically when output is piped or when `NO_COLOR` is set.
+
+### Statusline
+
+`ccprism statusline` prints a single line for Claude Code's custom statusLine,
+showing ccprism's own cost for the live session next to its context fill and
+turn count. Point Claude Code at it in `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "ccprism statusline" } }
+```
 
 ## Status
 
