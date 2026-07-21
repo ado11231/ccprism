@@ -72,6 +72,31 @@ export function rollupOf(entries: Iterable<MessageUsage>): UsageRollup {
 // Groups entries into rollups. Entries whose key comes back
 // undefined are dropped, for example usage without a timestamp when
 // grouping by day.
+// Of all prompt side tokens the api processed, the share that came
+// from cache instead of being paid at the full input rate. Lives here
+// rather than in a renderer because both the dashboard and the live
+// panel report it, and they must never disagree.
+export function cacheHitRatio(rollup: UsageRollup): number {
+  const t = rollup.tokens;
+  const promptTokens = t.input + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h;
+  return promptTokens === 0 ? 0 : t.cacheRead / promptTokens;
+}
+
+// Dollars per hour of wall clock. Undefined for sessions too short to
+// divide by: a few seconds of elapsed time turns cents into a rate in
+// the hundreds, which reads as alarming and means nothing.
+const MIN_BURN_RATE_MS = 60_000;
+
+export function burnRatePerHour(
+  usd: number,
+  durationMs: number | undefined,
+): number | undefined {
+  if (durationMs === undefined || durationMs < MIN_BURN_RATE_MS) {
+    return undefined;
+  }
+  return usd / (durationMs / 3_600_000);
+}
+
 export function rollupByKey(
   entries: Iterable<MessageUsage>,
   key: (entry: MessageUsage) => string | undefined,

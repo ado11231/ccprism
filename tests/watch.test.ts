@@ -1,9 +1,16 @@
-import { copyFile, mkdir, mkdtemp, utimes } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WatchFlags } from "../src/commands/watch.js";
-import { runWatch, sessionLine } from "../src/commands/watch.js";
+import { runWatch, sessionSnapshot } from "../src/commands/watch.js";
 
 const FIXTURES = join(__dirname, "fixtures");
 const BASIC = join(FIXTURES, "basic.jsonl");
@@ -58,9 +65,10 @@ async function makeRoot(): Promise<string> {
   return root;
 }
 
-describe("sessionLine", () => {
+describe("sessionSnapshot", () => {
   it("reflects file content and carries no timestamp", async () => {
-    const line = await sessionLine(BASIC);
+    const snapshot = await sessionSnapshot(BASIC);
+    const line = snapshot?.text;
     // Change detection compares this, so the clock must not be in it.
     expect(line).not.toMatch(/\d\d:\d\d:\d\d/);
     expect(line).toContain("opus-4-8");
@@ -68,14 +76,130 @@ describe("sessionLine", () => {
     expect(line).toContain("turns");
   });
 
+  // The compared text must stay free of the delta, or an unchanged
+  // session would print a "+$0.00" line on every tick forever.
+  it("keeps the cost delta out of the compared text", async () => {
+    const snapshot = await sessionSnapshot(BASIC);
+    expect(snapshot?.text).not.toContain("+$");
+    expect(typeof snapshot?.usd).toBe("number");
+  });
+
   it("yields a different line when the file's content changes", async () => {
-    const before = await sessionLine(COMPACT);
-    const after = await sessionLine(BASIC);
-    expect(before).not.toEqual(after);
+    const before = await sessionSnapshot(COMPACT);
+    const after = await sessionSnapshot(BASIC);
+    expect(before?.text).not.toEqual(after?.text);
   });
 
   it("returns undefined for an unreadable file", async () => {
-    expect(await sessionLine("/no/such/file.jsonl")).toBeUndefined();
+    expect(await sessionSnapshot("/no/such/file.jsonl")).toBeUndefined();
+  });
+});
+
+describe("cost delta", () => {
+  // Grows a session the way Claude Code does: a new assistant node
+  // hung off the current leaf, and the trailing last-prompt line
+  // rewritten to point at it. Without moving leafUuid the new node is
+  // off the active branch and its cost would not count.
+  const LEAF = "1c850ba5-2405-4e1c-9067-1a85b8468aa1";
+  const NEXT = "aaaaaaaa-0000-0000-0000-000000000009";
+  const SESSION = "13af1923-3b85-44dc-9715-0af802703bd6";
+
+  async function growingRoot(): Promise<{ root: string; file: string }> {
+    const root = await mkdtemp(join(tmpdir(), "ccprism-delta-"));
+    const project = join(root, "-scrubbed-project");
+    await mkdir(project);
+    const file = join(project, `${SESSION}.jsonl`);
+    await copyFile(BASIC, file);
+    return { root, file };
+  }
+
+  async function grow(file: string): Promise<void> {
+    const lines = (await readFile(file, "utf8")).trim().split("\n");
+    const kept = lines.filter((line) => !line.includes('"last-prompt"'));
+    const turn = {
+      parentUuid: LEAF,
+      isSidechain: false,
+      type: "assistant",
+      uuid: NEXT,
+      timestamp: "2026-07-20T19:53:10.000Z",
+      sessionId: SESSION,
+      message: {
+        model: "claude-opus-4-8",
+        id: "msg_delta_test",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "[scrubbed]" }],
+        stop_reason: "end_turn",
+        usage: {
+          input_tokens: 10,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 1000,
+          output_tokens: 5000,
+        },
+      },
+    };
+    const trailer = { type: "last-prompt", leafUuid: NEXT, sessionId: SESSION };
+    await writeFile(
+      file,
+      `${[...kept, JSON.stringify(turn), JSON.stringify(trailer)].join("\n")}\n`,
+    );
+  }
+
+  async function waitFor(fn: () => boolean, timeoutMs = 3000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (fn()) return;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    throw new Error("timed out waiting for condition");
+  }
+
+  it("prints the per-turn cost beside the total as the session grows", async () => {
+    const { root, file } = await growingRoot();
+    const controller = new AbortController();
+    const run = runWatch(flags(root), {
+      intervalMs: 15,
+      signal: controller.signal,
+      now: CLOCK,
+    });
+
+    await waitFor(() => logSpy.mock.calls.length >= 1);
+    // The opening line has nothing to compare against, so no delta.
+    expect(logged()).not.toContain("+$");
+
+    await grow(file);
+    await waitFor(() => logSpy.mock.calls.length >= 2);
+    controller.abort();
+    expect(await run).toBe(0);
+
+    const lines = logged().split("\n");
+    expect(lines[1]).toMatch(/\+\$\d+\.\d\d/);
+    // The delta is the new turn only, while the total carries the
+    // whole session, so the total has to be the larger of the two.
+    const total = Number(/· \$(\d+\.\d\d) ·/.exec(lines[1] ?? "")?.[1]);
+    const delta = Number(/\+\$(\d+\.\d\d)/.exec(lines[1] ?? "")?.[1]);
+    expect(delta).toBeGreaterThan(0);
+    expect(total).toBeGreaterThan(delta);
+  });
+
+  it("stays quiet when a touched file's numbers did not move", async () => {
+    const { root, file } = await growingRoot();
+    const controller = new AbortController();
+    const run = runWatch(flags(root), {
+      intervalMs: 15,
+      signal: controller.signal,
+      now: CLOCK,
+    });
+    await waitFor(() => logSpy.mock.calls.length >= 1);
+
+    // Rewriting identical content moves mtime, so the poller wakes and
+    // re-renders. A "+$0.00" line here would mean the delta leaked
+    // into change detection.
+    await writeFile(file, await readFile(file, "utf8"));
+    await new Promise((r) => setTimeout(r, 90));
+    controller.abort();
+    await run;
+    expect(logSpy.mock.calls.length).toBe(1);
   });
 });
 

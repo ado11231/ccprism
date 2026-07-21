@@ -1,5 +1,10 @@
 import { basename, dirname } from "node:path";
-import { summarizeSession } from "../cost/aggregate.js";
+import {
+  burnRatePerHour,
+  cacheHitRatio,
+  summarizeSession,
+} from "../cost/aggregate.js";
+import { parseHostJson } from "../parser/host.js";
 import { parseSessionFile } from "../parser/session.js";
 import { currentContext, statuslinePanel } from "../render/live.js";
 import { glyphsFor } from "../render/glyphs.js";
@@ -44,40 +49,6 @@ function assumeContextWindow(tokens: number): number {
     : DEFAULT_CONTEXT_WINDOW;
 }
 
-interface StdinData {
-  transcriptPath: string | undefined;
-  // Undefined when the json carried no size, so the caller can pick
-  // one from the context it measured.
-  contextWindow: number | undefined;
-}
-
-function parseStdin(raw: string | undefined): StdinData {
-  const empty: StdinData = {
-    transcriptPath: undefined,
-    contextWindow: undefined,
-  };
-  if (raw === undefined) return empty;
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return empty;
-  }
-  const obj =
-    typeof value === "object" && value !== null
-      ? (value as Record<string, unknown>)
-      : {};
-  const path = obj.transcript_path;
-  const window =
-    typeof obj.context_window === "object" && obj.context_window !== null
-      ? (obj.context_window as Record<string, unknown>).context_window_size
-      : undefined;
-  return {
-    transcriptPath: typeof path === "string" && path !== "" ? path : undefined,
-    contextWindow: typeof window === "number" && window > 0 ? window : undefined,
-  };
-}
-
 // Reads all of stdin, but only when something is actually piped in.
 // A tty means the command was run by hand, so there is nothing to
 // read and blocking on it would hang.
@@ -99,7 +70,8 @@ export async function runStatusline(
   // Claude Code piped us JSON. Any failure from here on must stay
   // quiet and exit 0 so the user's status line never shows an error.
   const invoked = raw !== undefined;
-  const { transcriptPath, contextWindow } = parseStdin(raw);
+  const host = parseHostJson(raw);
+  const { transcriptPath, contextWindow } = host;
 
   const root = flags.root ?? defaultProjectsRoot();
   const filePath = transcriptPath ?? (await newestSessionPath(root));
@@ -131,13 +103,32 @@ export async function runStatusline(
   const window = contextWindow ?? assumeContextWindow(context.tokens);
 
   if (flags.json) {
+    const known = summary.total.unknownModels.length === 0;
     console.log(
       JSON.stringify({
         sessionId: summary.sessionId,
+        sessionName: host.sessionName ?? null,
+        agentName: host.agentName ?? null,
         model: context.model ?? summary.models[summary.models.length - 1],
-        usd: summary.total.unknownModels.length > 0 ? null : summary.total.usd,
+        effort: host.effort ?? null,
+        fastMode: host.fastMode,
+        usd: known ? summary.total.usd : null,
+        // Cost of output on abandoned and retried branches: paid for,
+        // never seen. A subset of usd, not extra spend on top of it.
+        wastedUsd: known ? summary.offBranch.usd : null,
+        burnUsdPerHour: known
+          ? (burnRatePerHour(summary.total.usd, summary.durationMs) ?? null)
+          : null,
+        cacheHitRatio:
+          summary.total.messages > 0 ? cacheHitRatio(summary.total) : null,
+        linesAdded: host.linesAdded ?? null,
+        linesRemoved: host.linesRemoved ?? null,
         contextTokens: context.tokens,
         contextWindow: window,
+        // Percentages as the host sends them, 0 to 100. Null on api
+        // plans and before the first response of the session.
+        rateLimitFiveHourPercent: host.fiveHour?.usedPercentage ?? null,
+        rateLimitSevenDayPercent: host.sevenDay?.usedPercentage ?? null,
         turns: summary.turns,
         source: transcriptPath !== undefined ? "stdin" : "latest",
       }),
@@ -149,6 +140,7 @@ export async function runStatusline(
     c: makeStyle(colorEnabledWhenCaptured(flags.color)),
     g: glyphsFor(flags.ascii),
     contextWindow: window,
+    host,
   })) {
     console.log(row);
   }

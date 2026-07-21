@@ -16,6 +16,9 @@ export interface GlyphSet {
   dot: string;
   // Marks truncation, both inline and in collapse counts.
   ellipsis: string;
+  // Leads a removed line count. A true minus, not a hyphen, so it
+  // sits at the same width and height as the + beside it.
+  minus: string;
   // Filled and empty cells of the context gauge.
   gaugeFull: string;
   gaugeEmpty: string;
@@ -30,6 +33,7 @@ export const UNICODE_GLYPHS: GlyphSet = {
   rule: "─",
   dot: "·",
   ellipsis: "…",
+  minus: "−",
   gaugeFull: "▓",
   gaugeEmpty: "░",
   tools: {
@@ -52,6 +56,7 @@ export const ASCII_GLYPHS: GlyphSet = {
   rule: "-",
   dot: ".",
   ellipsis: "...",
+  minus: "-",
   gaugeFull: "#",
   gaugeEmpty: "-",
   tools: {

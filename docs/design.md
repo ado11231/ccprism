@@ -227,21 +227,54 @@ Phase 3 adds `view --markdown`; later, `find <query>`.
 
 Built for Claude Code's `statusLine` setting, which runs a command after each
 assistant message and pipes session JSON on stdin (schema:
-code.claude.com/docs/en/statusline). The one field we use is
+code.claude.com/docs/en/statusline). The anchor field is
 `transcript_path` — it names the exact session file, so there is no guessing
 by mtime. We parse that file with the normal pipeline and print **ccprism's
 own** cost, so the number matches `view` and the dashboard rather than echoing
 Claude Code's `cost.total_cost_usd`. Run from a shell with no piped input it
 falls back to the newest session, which makes it previewable.
 
-Output is a two-row panel. Claude Code renders one row per printed line, in
-its own block **above** the built-in footer badges (it does not replace them),
-so rows are scarce: two is comfortable, three is the practical ceiling.
+Reading that JSON lives in `parser/host.ts`, not in the command: it is pure
+parsing with no cost or style dependency, so it belongs on the parser side of
+the one-way arrow. The shape is Claude Code's and it drifts between releases,
+so **every field is optional and every read is guarded** — a key that is
+missing, null, or the wrong type reads as `undefined` and its part of the
+panel does not render. Nothing in that file throws. Only fields we actually
+render are parsed; an unrendered field is dead code.
+
+Output is a panel of up to four rows, one job each. Claude Code renders one
+row per printed line, in its own block **above** the built-in footer badges
+(it does not replace them).
 
 ```
-opus-4-8  ·  $20.90  ·  13 turns
-▓▓▓▓░░░░░░░░░░  26%   262k / 1.0M ctx
+sec-review  ·  opus-4-8  ·  high  ·  2 turns        what is running
+$0.19  ·  $2.40/hr  ·  $0.03 wasted  ·  +156 −23    what it cost
+▓▓▓░░░░░░░░░░░  14%   27.4k / 200k ctx              room left
+▓▓▓▓░░░░░░░░░░  24%   5h · 41% week · 89% cache     quota left
 ```
+
+Every row and every segment drops out when its data is missing, rather than
+rendering a zero — so the panel shrinks back to two rows on an API plan with
+nothing to report. A row never half exists: no empty gauges, no `$0.00
+wasted`, no `+0 −0`. What is absent when:
+
+- `session_name` — only with a `--name`/`/rename` name or a generated title;
+  the default `my-app-3f` style name does not populate it. A subagent's
+  `agent.name` stands in when the session has none, rather than taking a
+  second segment.
+- `effort.level` — only when the current model has the parameter.
+- `rate_limits` — Claude.ai subscribers only, and only after the first
+  response of the session. Each window is independently absent.
+- Burn rate — suppressed below a minute of wall clock, where a few cents
+  divides out to an alarming and meaningless hourly rate.
+- Wasted spend — `offBranch` cost, money paid for output on retried and
+  abandoned branches that was never seen. A subset of the total, not spend on
+  top of it. Hidden at zero, which is the good news.
+
+The **five-hour** window gets the bar, being the one that cuts a working
+session off; the weekly window rides beside it as a number. With no
+subscription to report, the cache share takes the bar instead, so the row
+still leads with a gauge rather than a lone number.
 
 `ctx` is the input side of the most recent main-thread API call (fresh input +
 cache reads + cache writes, output excluded — the same basis as Claude Code's
@@ -260,9 +293,13 @@ Color rules (this surface inverts two defaults on purpose):
 - **`dim` is banned for content here.** It renders as low-contrast gray, and
   this is small text on someone else's background. Dim is kept for separators
   only, which are structure and should recede.
-- The gauge shifts green → yellow → red at 50% / 80%. This is the one color
-  that carries information rather than decoration: it warns before compaction.
-  The token detail inherits the gauge color, being the same measurement.
+- Gauges shift green → yellow → red at 50% / 80%. This is the one color that
+  carries information rather than decoration: it warns before compaction and
+  before a cutoff. The token detail inherits the gauge color, being the same
+  measurement. Cache hit is **inverted** (green ≥ 80%, red < 50%) — a low
+  cache share is the expensive case. Inversion is a separate function rather
+  than a flag on the first, because the thresholds are genuinely different
+  numbers and not a mirror.
 - Model is colored by family (opus magenta, sonnet blue, haiku green, fable
   cyan) so a model switch is visible at a glance. Cost is bold, turns plain.
 
@@ -285,6 +322,27 @@ stamped with a wall clock, each time the numbers actually move. That keeps it
 live in a terminal and still a clean cost log when redirected to a file —
 which cursor tricks would not survive. The header (`watching <file> — ctrl-c
 to stop`) goes to stderr so a redirect of stdout captures only the cost lines.
+
+```
+10:32:15  opus-4-8 · $0.19 · +$0.04 · 27.8k ctx · 2 turns
+```
+
+The `+$0.04` is the cost added since the last line printed, sitting next to
+the total so a scan down the log reads as both a running total and the price
+of each turn. It is omitted on the first line, when a model has no pricing,
+and when the change is too small to move the printed total — a `+$0.00` would
+read as a bug rather than as free.
+
+The delta forces the tick to render **twice**. Change detection compares the
+line *without* the delta; the printed line has it spliced in. Folding the
+delta into the compared text would make an unchanged session differ from the
+stored line on every tick and print forever. Hence `sessionSnapshot` returns
+the summary and the undecorated text rather than one string.
+
+Rate limits deliberately do **not** appear here. `rate_limits` arrives only on
+the statusline's stdin JSON; `watch` is a standalone command tailing a file
+with no Claude Code process feeding it, and inventing a state file to carry
+the number across would break the read-only and no-state constraints.
 
 It follows the session resolved at startup for the whole run: the newest one
 with a conversation, or the `[id]` prefix given (same matching as `view`:

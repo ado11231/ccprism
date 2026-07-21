@@ -1,12 +1,16 @@
 import { basename, dirname } from "node:path";
-import { summarizeSession } from "../cost/aggregate.js";
+import { summarizeSession, type SessionSummary } from "../cost/aggregate.js";
 import {
   defaultProjectsRoot,
   discoverSessionFiles,
 } from "../parser/discover.js";
 import { parseSessionFile } from "../parser/session.js";
 import { fmtClock } from "../render/format.js";
-import { currentContext, statuslineText } from "../render/live.js";
+import {
+  currentContext,
+  statuslineText,
+  type CurrentContext,
+} from "../render/live.js";
 import { newestSessionPath, type CommandFlags } from "./load.js";
 import { pollFile, type PollOptions } from "./poll.js";
 
@@ -53,13 +57,25 @@ async function resolveTarget(flags: WatchFlags): Promise<Target> {
   return { filePath: (matches[0] as { filePath: string }).filePath };
 }
 
-// The current cost line for a file, undecorated by a timestamp, or
-// undefined when it cannot be parsed (a torn write mid append). The
-// clock is left off so change detection compares the numbers only:
-// the same cost a second later is not a new line.
-export async function sessionLine(
+export interface SessionSnapshot {
+  summary: SessionSummary;
+  context: CurrentContext;
+  // The cost line with no clock and no delta. Change detection
+  // compares exactly this. The delta has to stay out of it: a line
+  // carrying "+$0.00" would differ from the stored one on every tick
+  // and print forever, so the compared text and the printed text are
+  // deliberately two renders of the same snapshot.
+  text: string;
+  // Session cost so far, or undefined when a model has no pricing and
+  // no delta can honestly be taken from it.
+  usd: number | undefined;
+}
+
+// The current state of a file, or undefined when it cannot be parsed
+// (a torn write mid append).
+export async function sessionSnapshot(
   filePath: string,
-): Promise<string | undefined> {
+): Promise<SessionSnapshot | undefined> {
   let parsed;
   try {
     parsed = await parseSessionFile(filePath);
@@ -70,22 +86,30 @@ export async function sessionLine(
     { filePath, projectSlug: basename(dirname(filePath)) },
     parsed.session,
   );
-  return statuslineText(summary, currentContext(parsed.session));
+  const context = currentContext(parsed.session);
+  return {
+    summary,
+    context,
+    text: statuslineText(summary, context),
+    usd:
+      summary.total.unknownModels.length > 0 ? undefined : summary.total.usd,
+  };
 }
 
 // Prints, stamped with the wall clock, only when the cost line moved,
 // so an unchanged session stays quiet however often the file is
 // touched. A file that momentarily fails to parse keeps the last
-// line.
+// snapshot, so the next delta spans the gap rather than being lost.
 async function emit(
   filePath: string,
-  last: string | undefined,
+  last: SessionSnapshot | undefined,
   now: () => Date,
-): Promise<string | undefined> {
-  const line = await sessionLine(filePath);
-  if (line === undefined || line === last) return last;
+): Promise<SessionSnapshot | undefined> {
+  const snapshot = await sessionSnapshot(filePath);
+  if (snapshot === undefined || snapshot.text === last?.text) return last;
+  const line = statuslineText(snapshot.summary, snapshot.context, last?.usd);
   console.log(`${fmtClock(now())}  ${line}`);
-  return line;
+  return snapshot;
 }
 
 export async function runWatch(
@@ -104,7 +128,7 @@ export async function runWatch(
   // The poller re-reads only when the file moved. A growing file is
   // read whole each time; the streaming reader drops any half written
   // trailing line, so a mid append snapshot is safe.
-  let last: string | undefined;
+  let last: SessionSnapshot | undefined;
   return await pollFile(
     filePath,
     { ...options, onStop: () => console.error("") },

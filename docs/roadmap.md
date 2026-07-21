@@ -61,36 +61,43 @@ Candidates for the live panel, and where the data comes from. Rows are the
 scarce resource (see design.md §5) — this is a curation problem, not a
 capacity one, so additions have to earn their row.
 
-**Free — already on the stdin JSON, currently ignored:**
+**Shipped 2026-07-21** — the panel went from two rows to four, one job each
+(identity / cost / context / limits): rate limit gauge (`five_hour` on the
+bar, `seven_day` beside it), lines changed, effort and fast-mode badges,
+session and agent name, cache hit ratio, wasted spend, burn rate. `watch`
+gained the per-turn cost delta. Every field is optional, so the panel shrinks
+back to two rows on an API plan.
+
+**Still free on the stdin JSON, unused:**
 
 | Metric | Field | Notes |
 |---|---|---|
-| **Rate limit gauge** | `rate_limits.five_hour` / `.seven_day` (`used_percentage`, `resets_at`) | **Highest value.** Answers "how much quota before I'm cut off", which nothing else on screen shows. Naturally gauge-shaped. Pro/Max only |
-| Lines changed | `cost.total_lines_added` / `_removed` | compact `+156 −23` |
 | Session / API duration | `cost.total_duration_ms`, `total_api_duration_ms` | ratio = how much was spent waiting |
-| Effort, fast mode, thinking | `effort.level`, `fast_mode`, `thinking.enabled` | |
+| Rate limit reset | `rate_limits.*.resets_at` | "24% and resets in 2h" reads very differently from "24% and resets in 4 days". Deferred only because the limits row is full |
+| Thinking | `thinking.enabled` | did not earn a badge next to effort |
 | Git + PR | `workspace.repo.name`, `git_worktree`, `pr.number`, `pr.review_state` | |
-| Session / agent name | `session_name`, `agent.name` | |
 
 **ccprism-only — from our own parse, and the actual differentiator:**
 
 | Metric | Notes |
 |---|---|
-| **Cache hit ratio** | Gauge-shaped, and *inverted*: low cache = burning money. The most ccprism metric there is |
-| **Wasted spend** | Cost on abandoned/retry branches (`offBranch`) — money paid for output never seen. Novel |
-| Burn rate | $/hour for the session |
 | Tool failure rate | gauge-shaped (% of calls that failed) |
-| Cost split by tool | bash vs edit vs read |
+| Cost split by tool | bash vs edit vs read. Shipped in `watch -v` shape? Not yet — no row for it |
 | Subagent spend | how much went to Task sidechains |
 | Longest gap | duration overstates real work without it |
 
-Only four of these are genuinely gauge-shaped (natural 0–100% ceiling):
-context fill (shipped), rate limits, cache hit ratio, tool failure rate. The
-rest read better as plain numbers — a bar with no ceiling is decoration.
+Of the gauge-shaped four (natural 0–100% ceiling), three are shipped: context
+fill, rate limits, cache hit. Only tool failure rate is left. Everything else
+reads better as a plain number — a bar with no ceiling is decoration.
 
 Standing rule for this panel: **don't duplicate what Claude Code's own footer
 already shows.** Both are visible at once, so a repeated metric spends screen
 space twice.
+
+`watch` cannot show rate limits at all: `rate_limits` exists only on the
+statusline's stdin JSON, and `watch` tails a file with no host process feeding
+it. Carrying the number across would need a state file, which the read-only
+and no-state constraints rule out.
 
 ## Backlog (ordered)
 

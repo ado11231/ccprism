@@ -1,4 +1,5 @@
 import {
+  cacheHitRatio,
   dayOf,
   emptyRollup,
   mergeRollups,
@@ -33,14 +34,6 @@ interface ProjectRow {
   name: string;
   sessions: number;
   rollup: UsageRollup;
-}
-
-// Of all prompt side tokens the api processed, the share that came
-// from cache instead of being paid at the full input rate.
-function cacheHitRatio(rollup: UsageRollup): number {
-  const t = rollup.tokens;
-  const promptTokens = t.input + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h;
-  return promptTokens === 0 ? 0 : t.cacheRead / promptTokens;
 }
 
 function startOfLocalDay(date: Date): Date {
