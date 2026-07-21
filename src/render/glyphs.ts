@@ -16,6 +16,9 @@ export interface GlyphSet {
   dot: string;
   // Marks truncation, both inline and in collapse counts.
   ellipsis: string;
+  // Filled and empty cells of the context gauge.
+  gaugeFull: string;
+  gaugeEmpty: string;
   tools: Record<ToolCategory, string>;
 }
 
@@ -27,6 +30,8 @@ export const UNICODE_GLYPHS: GlyphSet = {
   rule: "─",
   dot: "·",
   ellipsis: "…",
+  gaugeFull: "▓",
+  gaugeEmpty: "░",
   tools: {
     bash: "⚡",
     edit: "✎",
@@ -47,6 +52,8 @@ export const ASCII_GLYPHS: GlyphSet = {
   rule: "-",
   dot: ".",
   ellipsis: "...",
+  gaugeFull: "#",
+  gaugeEmpty: "-",
   tools: {
     bash: "$",
     edit: "+",

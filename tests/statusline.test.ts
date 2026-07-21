@@ -3,9 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyRollup, type SessionSummary } from "../src/cost/aggregate.js";
-import { runStatusline } from "../src/commands/statusline.js";
-import type { CommandFlags } from "../src/commands/load.js";
-import { currentContext, statuslineText } from "../src/render/live.js";
+import {
+  runStatusline,
+  type StatuslineFlags,
+} from "../src/commands/statusline.js";
+import { glyphsFor } from "../src/render/glyphs.js";
+import { makeStyle } from "../src/render/style.js";
+import {
+  currentContext,
+  statuslinePanel,
+  statuslineText,
+} from "../src/render/live.js";
 import { parseSessionFile } from "../src/parser/session.js";
 
 const FIXTURES = join(__dirname, "fixtures");
@@ -27,13 +35,14 @@ function logged(): string {
   return logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
 }
 
-function flags(extra: Partial<CommandFlags> = {}): CommandFlags {
+function flags(extra: Partial<StatuslineFlags> = {}): StatuslineFlags {
   return {
     json: false,
     color: false,
     project: undefined,
     since: undefined,
     until: undefined,
+    ascii: false,
     ...extra,
   };
 }
@@ -106,6 +115,66 @@ describe("statuslineText", () => {
   it("falls back to the session's model when context has none", () => {
     const line = statuslineText(summary(), { tokens: 5, model: undefined });
     expect(line).toContain("opus-4-8");
+  });
+});
+
+describe("statuslinePanel", () => {
+  function panel(
+    tokens: number,
+    contextWindow = 200_000,
+    extra: Partial<SessionSummary> = {},
+    ascii = false,
+  ): string[] {
+    return statuslinePanel(
+      summary({ total: { ...emptyRollup(), usd: 0.19 }, turns: 2, ...extra }),
+      { tokens, model: "claude-opus-4-8" },
+      { c: makeStyle(false), g: glyphsFor(ascii), contextWindow },
+    );
+  }
+
+  it("puts model, cost, and turns on the first row", () => {
+    expect(panel(27_400)[0]).toBe("opus-4-8  ·  $0.19  ·  2 turns");
+  });
+
+  it("draws a gauge row with percent and token detail", () => {
+    const row = panel(27_400)[1] as string;
+    expect(row).toContain("▓");
+    expect(row).toContain("░");
+    expect(row).toContain("14%");
+    expect(row).toContain("27.4k / 200k ctx");
+  });
+
+  it("fills the gauge proportionally", () => {
+    const low = (panel(20_000)[1] as string).split("▓").length - 1;
+    const high = (panel(180_000)[1] as string).split("▓").length - 1;
+    expect(high).toBeGreaterThan(low);
+  });
+
+  it("shows at least one filled cell once any context is used", () => {
+    expect(panel(200)[1] as string).toMatch(/^▓░+/);
+  });
+
+  it("respects a larger context window from the session json", () => {
+    const row = panel(200_000, 1_000_000)[1] as string;
+    expect(row).toContain("20%");
+    expect(row).toContain("200k / 1.0M ctx");
+  });
+
+  it("drops the gauge row before the first api call", () => {
+    expect(panel(0)).toHaveLength(1);
+  });
+
+  it("swaps gauge glyphs for ascii", () => {
+    const row = panel(27_400, 200_000, {}, true)[1] as string;
+    expect(row).toContain("#");
+    expect(row).not.toContain("▓");
+  });
+
+  it("marks cost unknown without breaking the row", () => {
+    const rows = panel(1000, 200_000, {
+      total: { ...emptyRollup(), usd: 0, unknownModels: ["mystery"] },
+    });
+    expect(rows[0]).toContain("$?");
   });
 });
 

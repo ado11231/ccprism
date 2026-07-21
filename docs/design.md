@@ -233,13 +233,42 @@ own** cost, so the number matches `view` and the dashboard rather than echoing
 Claude Code's `cost.total_cost_usd`. Run from a shell with no piped input it
 falls back to the newest session, which makes it previewable.
 
-Output is one line: `model · $cost · <ctx> ctx · <turns> turns`, where `ctx`
-is the input side of the most recent main-thread API call (fresh input + cache
-reads + cache writes, output excluded — the same basis as Claude Code's
-`used_percentage`). Plain text: stdout is always captured by Claude Code, so
-color stays off, and the line must survive with no styling anyway. A statusLine
-command must never break its host, so once Claude Code has invoked us every
-failure path prints best effort and exits 0.
+Output is a two-row panel. Claude Code renders one row per printed line, in
+its own block **above** the built-in footer badges (it does not replace them),
+so rows are scarce: two is comfortable, three is the practical ceiling.
+
+```
+opus-4-8  ·  $20.90  ·  13 turns
+▓▓▓▓░░░░░░░░░░  26%   262k / 1.0M ctx
+```
+
+`ctx` is the input side of the most recent main-thread API call (fresh input +
+cache reads + cache writes, output excluded — the same basis as Claude Code's
+`used_percentage`). The **token count is ccprism's own** so it agrees with
+`view` and the dashboard; only the **window size** is taken from the session
+JSON (`context_window.context_window_size`). On a manual run no size is sent,
+so one is inferred: context above 200k proves the extended tier, and assuming
+the small window there would report a false red 100%. The gauge row drops
+entirely before the first API call.
+
+Color rules (this surface inverts two defaults on purpose):
+
+- Color is **on by default**. Statusline stdout is *always* captured, so the
+  normal pipe test would strip every color; `colorEnabledWhenCaptured` honors
+  only `--no-color` and `NO_COLOR`.
+- **`dim` is banned for content here.** It renders as low-contrast gray, and
+  this is small text on someone else's background. Dim is kept for separators
+  only, which are structure and should recede.
+- The gauge shifts green → yellow → red at 50% / 80%. This is the one color
+  that carries information rather than decoration: it warns before compaction.
+  The token detail inherits the gauge color, being the same measurement.
+- Model is colored by family (opus magenta, sonnet blue, haiku green, fable
+  cyan) so a model switch is visible at a glance. Cost is bold, turns plain.
+
+A statusLine command must never break its host, so once Claude Code has
+invoked us every failure path prints best effort and exits 0. Note it runs in
+a bare non-interactive shell that may not have a version-managed `node` on
+PATH — absolute paths in the `command` avoid a silently blank bar.
 
 Settings snippet:
 

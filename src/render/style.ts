@@ -11,6 +11,15 @@ export function colorEnabled(flagColor: boolean): boolean {
   return process.stdout.isTTY === true;
 }
 
+// The statusline is always captured by Claude Code, which renders the
+// ansi itself, so the pipe test above would wrongly strip every color.
+// This rule keeps color on for that surface, still honoring an
+// explicit --no-color and the NO_COLOR convention.
+export function colorEnabledWhenCaptured(flagColor: boolean): boolean {
+  if (!flagColor) return false;
+  return process.env.NO_COLOR === undefined;
+}
+
 export function makeStyle(enabled: boolean): Style {
   return pc.createColors(enabled);
 }

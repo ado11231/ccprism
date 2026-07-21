@@ -1,7 +1,9 @@
 import { basename, dirname } from "node:path";
 import { summarizeSession } from "../cost/aggregate.js";
 import { parseSessionFile } from "../parser/session.js";
-import { currentContext, statuslineText } from "../render/live.js";
+import { currentContext, statuslinePanel } from "../render/live.js";
+import { glyphsFor } from "../render/glyphs.js";
+import { colorEnabledWhenCaptured, makeStyle } from "../render/style.js";
 import { defaultProjectsRoot } from "../parser/discover.js";
 import { newestSessionPath, type CommandFlags } from "./load.js";
 
@@ -16,6 +18,10 @@ import { newestSessionPath, type CommandFlags } from "./load.js";
 // A statusLine command must never break its host, so every failure
 // path when invoked by Claude Code prints best effort and exits 0.
 
+export interface StatuslineFlags extends CommandFlags {
+  ascii: boolean;
+}
+
 export interface StatuslineInput {
   // Raw JSON Claude Code piped in, or undefined when run from a shell
   // with no piped input. Injected so the resolution logic stays
@@ -23,25 +29,52 @@ export interface StatuslineInput {
   stdin: string | undefined;
 }
 
+// Claude Code's default window, and the extended tier. Both only
+// matter on a manual run: when Claude Code invokes us it always sends
+// the real size for the current model.
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+const EXTENDED_CONTEXT_WINDOW = 1_000_000;
+
+// Picks a window when the session json did not name one. Context that
+// already exceeds the default proves the model is on the extended
+// tier, so assuming the small window there would report a false 100%.
+function assumeContextWindow(tokens: number): number {
+  return tokens > DEFAULT_CONTEXT_WINDOW
+    ? EXTENDED_CONTEXT_WINDOW
+    : DEFAULT_CONTEXT_WINDOW;
+}
+
 interface StdinData {
   transcriptPath: string | undefined;
+  // Undefined when the json carried no size, so the caller can pick
+  // one from the context it measured.
+  contextWindow: number | undefined;
 }
 
 function parseStdin(raw: string | undefined): StdinData {
-  if (raw === undefined) return { transcriptPath: undefined };
+  const empty: StdinData = {
+    transcriptPath: undefined,
+    contextWindow: undefined,
+  };
+  if (raw === undefined) return empty;
   let value: unknown;
   try {
     value = JSON.parse(raw);
   } catch {
-    return { transcriptPath: undefined };
+    return empty;
   }
   const obj =
     typeof value === "object" && value !== null
       ? (value as Record<string, unknown>)
       : {};
   const path = obj.transcript_path;
+  const window =
+    typeof obj.context_window === "object" && obj.context_window !== null
+      ? (obj.context_window as Record<string, unknown>).context_window_size
+      : undefined;
   return {
     transcriptPath: typeof path === "string" && path !== "" ? path : undefined,
+    contextWindow: typeof window === "number" && window > 0 ? window : undefined,
   };
 }
 
@@ -59,14 +92,14 @@ async function readStdin(): Promise<string | undefined> {
 }
 
 export async function runStatusline(
-  flags: CommandFlags,
+  flags: StatuslineFlags,
   input?: StatuslineInput,
 ): Promise<number> {
   const raw = input === undefined ? await readStdin() : input.stdin;
   // Claude Code piped us JSON. Any failure from here on must stay
   // quiet and exit 0 so the user's status line never shows an error.
   const invoked = raw !== undefined;
-  const { transcriptPath } = parseStdin(raw);
+  const { transcriptPath, contextWindow } = parseStdin(raw);
 
   const root = flags.root ?? defaultProjectsRoot();
   const filePath = transcriptPath ?? (await newestSessionPath(root));
@@ -95,6 +128,7 @@ export async function runStatusline(
     parsed.session,
   );
   const context = currentContext(parsed.session);
+  const window = contextWindow ?? assumeContextWindow(context.tokens);
 
   if (flags.json) {
     console.log(
@@ -103,6 +137,7 @@ export async function runStatusline(
         model: context.model ?? summary.models[summary.models.length - 1],
         usd: summary.total.unknownModels.length > 0 ? null : summary.total.usd,
         contextTokens: context.tokens,
+        contextWindow: window,
         turns: summary.turns,
         source: transcriptPath !== undefined ? "stdin" : "latest",
       }),
@@ -110,6 +145,12 @@ export async function runStatusline(
     return 0;
   }
 
-  console.log(statuslineText(summary, context));
+  for (const row of statuslinePanel(summary, context, {
+    c: makeStyle(colorEnabledWhenCaptured(flags.color)),
+    g: glyphsFor(flags.ascii),
+    contextWindow: window,
+  })) {
+    console.log(row);
+  }
   return 0;
 }

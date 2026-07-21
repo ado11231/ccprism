@@ -55,13 +55,53 @@ Each phase ships something usable on its own.
 - npm publish (MIT license)
 - **Done when:** published, statusline works in your own daily setup.
 
+## Statusline metric backlog
+
+Candidates for the live panel, and where the data comes from. Rows are the
+scarce resource (see design.md §5) — this is a curation problem, not a
+capacity one, so additions have to earn their row.
+
+**Free — already on the stdin JSON, currently ignored:**
+
+| Metric | Field | Notes |
+|---|---|---|
+| **Rate limit gauge** | `rate_limits.five_hour` / `.seven_day` (`used_percentage`, `resets_at`) | **Highest value.** Answers "how much quota before I'm cut off", which nothing else on screen shows. Naturally gauge-shaped. Pro/Max only |
+| Lines changed | `cost.total_lines_added` / `_removed` | compact `+156 −23` |
+| Session / API duration | `cost.total_duration_ms`, `total_api_duration_ms` | ratio = how much was spent waiting |
+| Effort, fast mode, thinking | `effort.level`, `fast_mode`, `thinking.enabled` | |
+| Git + PR | `workspace.repo.name`, `git_worktree`, `pr.number`, `pr.review_state` | |
+| Session / agent name | `session_name`, `agent.name` | |
+
+**ccprism-only — from our own parse, and the actual differentiator:**
+
+| Metric | Notes |
+|---|---|
+| **Cache hit ratio** | Gauge-shaped, and *inverted*: low cache = burning money. The most ccprism metric there is |
+| **Wasted spend** | Cost on abandoned/retry branches (`offBranch`) — money paid for output never seen. Novel |
+| Burn rate | $/hour for the session |
+| Tool failure rate | gauge-shaped (% of calls that failed) |
+| Cost split by tool | bash vs edit vs read |
+| Subagent spend | how much went to Task sidechains |
+| Longest gap | duration overstates real work without it |
+
+Only four of these are genuinely gauge-shaped (natural 0–100% ceiling):
+context fill (shipped), rate limits, cache hit ratio, tool failure rate. The
+rest read better as plain numbers — a bar with no ceiling is decoration.
+
+Standing rule for this panel: **don't duplicate what Claude Code's own footer
+already shows.** Both are visible at once, so a repeated metric spends screen
+space twice.
+
 ## Backlog (ordered)
 
-1. `find "query"` — search across all sessions with pretty result context
-2. "Suggested model" insights (the observability-flavored ghost of the cut
+1. `view --follow` — the organized transcript tailing the live session, for a
+   split pane beside `claude` (Claude Code owns its TUI; `statusLine` is the
+   only in-window extension point, so side-by-side is the answer)
+2. `find "query"` — search across all sessions with pretty result context
+3. "Suggested model" insights (the observability-flavored ghost of the cut
    reroute feature)
-3. HTML export
-4. Config file (only once flags demonstrably aren't enough)
+4. HTML export
+5. Config file (only once flags demonstrably aren't enough)
 
 ## Standing rule
 

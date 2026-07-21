@@ -89,9 +89,11 @@ export function buildProgram(): Command {
       "One line of cost, context, and turns for Claude Code's custom statusLine",
     )
     .action(async (_opts: RawOpts, command: Command) => {
-      process.exitCode = await runStatusline(
-        toFlags(command.optsWithGlobals() as RawOpts),
-      );
+      const opts = command.optsWithGlobals() as RawOpts;
+      process.exitCode = await runStatusline({
+        ...toFlags(opts),
+        ascii: opts.ascii === true,
+      });
     });
 
   withGlobalFlags(program.command("watch"))
