@@ -36,6 +36,7 @@ ccprism            dashboard for today and this week, per project and model
 ccprism sessions   recent sessions with cost, duration, turns, and model
 ccprism view [id]  render a session transcript, latest session if id omitted
 ccprism statusline one line of cost, context, and turns for the active session
+ccprism watch [id] tail a session and stream its cost as it changes
 ccprism doctor     parse health: skipped lines and unknown model ids
 ```
 

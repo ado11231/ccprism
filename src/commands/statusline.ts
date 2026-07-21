@@ -1,13 +1,9 @@
 import { basename, dirname } from "node:path";
-import { summarizeSession, type SessionSummary } from "../cost/aggregate.js";
-import {
-  defaultProjectsRoot,
-  discoverSessionFiles,
-} from "../parser/discover.js";
-import type { ExtractedSession } from "../parser/events.js";
+import { summarizeSession } from "../cost/aggregate.js";
 import { parseSessionFile } from "../parser/session.js";
-import { fmtTokens, fmtUsd, shortModel } from "../render/format.js";
-import type { CommandFlags } from "./load.js";
+import { currentContext, statuslineText } from "../render/live.js";
+import { defaultProjectsRoot } from "../parser/discover.js";
+import { newestSessionPath, type CommandFlags } from "./load.js";
 
 // One readable line for Claude Code's custom statusLine command:
 // ccprism's own cost, the live context fill, and turns for the active
@@ -29,48 +25,6 @@ export interface StatuslineInput {
 
 interface StdinData {
   transcriptPath: string | undefined;
-}
-
-// The live context window fill and the model behind it, taken from
-// the most recent api call on the main thread. Matches Claude Code's
-// own used_percentage, which counts the input side only (fresh input
-// plus cache reads plus cache writes), not output.
-export interface CurrentContext {
-  tokens: number;
-  model: string | undefined;
-}
-
-export function currentContext(session: ExtractedSession): CurrentContext {
-  let latest: (typeof session.usage)[number] | undefined;
-  for (const entry of session.usage) {
-    if (entry.isSidechain || !entry.onActiveBranch) continue;
-    latest = entry;
-  }
-  if (latest === undefined) return { tokens: 0, model: undefined };
-  const u = latest.usage;
-  return {
-    tokens: u.input + u.cacheRead + u.cacheCreationTotal,
-    model: latest.model,
-  };
-}
-
-// The line itself, kept pure so tests do not need files or stdin.
-export function statuslineText(
-  summary: SessionSummary,
-  context: CurrentContext,
-): string {
-  const model = context.model ?? summary.models[summary.models.length - 1];
-  const cost =
-    summary.total.unknownModels.length > 0
-      ? "$?"
-      : fmtUsd(summary.total.usd);
-  const segments = [
-    model === undefined ? undefined : shortModel(model),
-    cost,
-    context.tokens > 0 ? `${fmtTokens(context.tokens)} ctx` : undefined,
-    `${summary.turns} ${summary.turns === 1 ? "turn" : "turns"}`,
-  ].filter((seg): seg is string => seg !== undefined);
-  return segments.join(" · ");
 }
 
 function parseStdin(raw: string | undefined): StdinData {
@@ -102,17 +56,6 @@ async function readStdin(): Promise<string | undefined> {
   }
   const text = Buffer.concat(chunks).toString("utf8").trim();
   return text === "" ? undefined : text;
-}
-
-async function newestSessionPath(root: string): Promise<string | undefined> {
-  const files = await discoverSessionFiles(root);
-  for (const file of files) {
-    // Skip stub files that hold only bookkeeping, same as view's
-    // latest default: the newest file is often one.
-    const parsed = await parseSessionFile(file.filePath);
-    if (parsed.session.events.length > 0) return file.filePath;
-  }
-  return undefined;
 }
 
 export async function runStatusline(

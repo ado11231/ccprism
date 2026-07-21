@@ -3,12 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyRollup, type SessionSummary } from "../src/cost/aggregate.js";
-import {
-  currentContext,
-  runStatusline,
-  statuslineText,
-} from "../src/commands/statusline.js";
+import { runStatusline } from "../src/commands/statusline.js";
 import type { CommandFlags } from "../src/commands/load.js";
+import { currentContext, statuslineText } from "../src/render/live.js";
 import { parseSessionFile } from "../src/parser/session.js";
 
 const FIXTURES = join(__dirname, "fixtures");

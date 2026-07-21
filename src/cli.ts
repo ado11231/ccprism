@@ -5,6 +5,7 @@ import { runDoctor } from "./commands/doctor.js";
 import { runSessions } from "./commands/sessions.js";
 import { runStatusline } from "./commands/statusline.js";
 import { runView } from "./commands/view.js";
+import { runWatch } from "./commands/watch.js";
 import type { CommandFlags } from "./commands/load.js";
 
 interface RawOpts {
@@ -91,6 +92,16 @@ export function buildProgram(): Command {
       process.exitCode = await runStatusline(
         toFlags(command.optsWithGlobals() as RawOpts),
       );
+    });
+
+  withGlobalFlags(program.command("watch"))
+    .description("Tail a session and stream its cost as it changes")
+    .argument("[id]", "session id, unambiguous prefixes accepted")
+    .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
+      process.exitCode = await runWatch({
+        ...toFlags(command.optsWithGlobals() as RawOpts),
+        id,
+      });
     });
 
   withGlobalFlags(program.command("doctor"))

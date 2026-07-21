@@ -216,10 +216,11 @@ ccprism                    dashboard: today / week, per project & model
 ccprism sessions           recent sessions: cost, duration, turns, model
 ccprism view [id]          transcript (latest session if id omitted)
 ccprism statusline         one line for Claude Code's custom statusLine
+ccprism watch [id]         tail a session, stream cost as it changes
 ccprism doctor             parse health: skipped lines, unknown model IDs
 ```
 
-Phase 3 adds `view --markdown`, `watch`; later, `find <query>`.
+Phase 3 adds `view --markdown`; later, `find <query>`.
 
 #### `statusline`
 
@@ -245,6 +246,23 @@ Settings snippet:
 ```json
 { "statusLine": { "type": "command", "command": "ccprism statusline" } }
 ```
+
+#### `watch`
+
+Tails one session and streams its cost as it changes. An **append log**, not a
+redraw-in-place panel: it prints the same one-line format as `statusline`,
+stamped with a wall clock, each time the numbers actually move. That keeps it
+live in a terminal and still a clean cost log when redirected to a file —
+which cursor tricks would not survive. The header (`watching <file> — ctrl-c
+to stop`) goes to stderr so a redirect of stdout captures only the cost lines.
+
+It follows the session resolved at startup for the whole run: the newest one
+with a conversation, or the `[id]` prefix given (same matching as `view`:
+ambiguous exits 1, no match exits 2). The file is polled once a second; a
+change re-parses the whole file (the streaming reader drops any half-written
+trailing line, so a mid-append snapshot is safe) and prints only when the cost
+line differs from the last — the clock is excluded from that comparison, so an
+unchanged session stays quiet however often the file is touched.
 
 ### Flags
 

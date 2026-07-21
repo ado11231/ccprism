@@ -97,6 +97,21 @@ export async function loadSessions(
   return loaded;
 }
 
+// The newest session that actually holds a conversation. Claude Code
+// writes stub files with only bookkeeping lines and the newest file
+// is often one, so those are skipped. Shared by the live commands
+// (statusline's fallback, watch's default target).
+export async function newestSessionPath(
+  root: string,
+): Promise<string | undefined> {
+  const files = await discoverSessionFiles(root);
+  for (const file of files) {
+    const parsed = await parseSessionFile(file.filePath);
+    if (parsed.session.events.length > 0) return file.filePath;
+  }
+  return undefined;
+}
+
 // Display name for a session's project: the last path segment of the
 // real cwd when the log carries one, the encoded slug otherwise.
 export function projectLabel(summary: SessionSummary): string {

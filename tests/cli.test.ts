@@ -5,7 +5,13 @@ describe("cli scaffold", () => {
   it("registers the v1 commands", () => {
     const program = buildProgram();
     const names = program.commands.map((command) => command.name());
-    expect(names).toEqual(["sessions", "view", "statusline", "doctor"]);
+    expect(names).toEqual([
+      "sessions",
+      "view",
+      "statusline",
+      "watch",
+      "doctor",
+    ]);
   });
 
   it("is named ccprism", () => {
