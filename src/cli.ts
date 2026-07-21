@@ -8,6 +8,12 @@ import { runView } from "./commands/view.js";
 import { runWatch } from "./commands/watch.js";
 import type { CommandFlags } from "./commands/load.js";
 
+// Help group headings. Live commands run beside a session in
+// progress; reports read sessions that already exist. The trailing
+// colon is commander's convention for a heading.
+const LIVE = "Live:";
+const REPORTS = "Reports:";
+
 interface RawOpts {
   json?: boolean;
   color?: boolean;
@@ -53,9 +59,39 @@ export function buildProgram(): Command {
     )
     .version(version);
 
+  // Commands are grouped in --help by what they are for: the ones you
+  // run beside a session in progress, and the ones you run over
+  // sessions that already exist. Commander orders the groups by first
+  // registration, so the live commands are declared first to put them
+  // at the top. Moving these blocks reorders the help.
+  withGlobalFlags(program.command("statusline"))
+    .helpGroup(LIVE)
+    .description(
+      "Cost, context, and rate limit panel for Claude Code's custom statusLine",
+    )
+    .action(async (_opts: RawOpts, command: Command) => {
+      const opts = command.optsWithGlobals() as RawOpts;
+      process.exitCode = await runStatusline({
+        ...toFlags(opts),
+        ascii: opts.ascii === true,
+      });
+    });
+
+  withGlobalFlags(program.command("watch"))
+    .helpGroup(LIVE)
+    .description("Tail a session and stream its cost as it changes")
+    .argument("[id]", "session id, unambiguous prefixes accepted")
+    .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
+      process.exitCode = await runWatch({
+        ...toFlags(command.optsWithGlobals() as RawOpts),
+        id,
+      });
+    });
+
   withGlobalFlags(
     program.command("sessions"),
   )
+    .helpGroup(REPORTS)
     .description("List recent sessions with cost, duration, turns, and model")
     .option("--limit <n>", "rows to show, 0 for all", "20")
     .action(async (_opts: RawOpts, command: Command) => {
@@ -70,6 +106,7 @@ export function buildProgram(): Command {
     });
 
   withGlobalFlags(program.command("view"))
+    .helpGroup(REPORTS)
     .description("Render a session transcript, latest session if id omitted")
     .argument("[id]", "session id, unambiguous prefixes accepted")
     .option("--full", "expand raw commands, tool outputs, and thinking")
@@ -87,29 +124,8 @@ export function buildProgram(): Command {
       });
     });
 
-  withGlobalFlags(program.command("statusline"))
-    .description(
-      "One line of cost, context, and turns for Claude Code's custom statusLine",
-    )
-    .action(async (_opts: RawOpts, command: Command) => {
-      const opts = command.optsWithGlobals() as RawOpts;
-      process.exitCode = await runStatusline({
-        ...toFlags(opts),
-        ascii: opts.ascii === true,
-      });
-    });
-
-  withGlobalFlags(program.command("watch"))
-    .description("Tail a session and stream its cost as it changes")
-    .argument("[id]", "session id, unambiguous prefixes accepted")
-    .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
-      process.exitCode = await runWatch({
-        ...toFlags(command.optsWithGlobals() as RawOpts),
-        id,
-      });
-    });
-
   withGlobalFlags(program.command("doctor"))
+    .helpGroup(REPORTS)
     .description("Report parse health: skipped lines and unknown model ids")
     .action(async (_opts: RawOpts, command: Command) => {
       process.exitCode = await runDoctor(
@@ -121,6 +137,20 @@ export function buildProgram(): Command {
   withGlobalFlags(program).action(async (opts: RawOpts) => {
     process.exitCode = await runDashboard(toFlags(opts));
   });
+
+  // The two features that are not commands, so the grouped list above
+  // cannot mention them: the bare dashboard and view's live mode.
+  program.addHelpText(
+    "after",
+    [
+      "",
+      "Run with no command for the dashboard: today and this week, by",
+      "project and model.",
+      "",
+      "view --follow is the live form of view. It renders the session so",
+      "far, then appends turns as they arrive.",
+    ].join("\n"),
+  );
 
   return program;
 }

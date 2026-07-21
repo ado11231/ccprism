@@ -6,12 +6,49 @@ describe("cli scaffold", () => {
     const program = buildProgram();
     const names = program.commands.map((command) => command.name());
     expect(names).toEqual([
-      "sessions",
-      "view",
       "statusline",
       "watch",
+      "sessions",
+      "view",
       "doctor",
     ]);
+  });
+
+  // Commands are grouped in --help by what they are for, and commander
+  // orders the groups by first registration. That makes declaration
+  // order load bearing, so both the grouping and the fact that live
+  // commands come first are pinned here.
+  it("groups the commands, live ones first", () => {
+    const groups = buildProgram().commands.map((command) => [
+      command.name(),
+      command.helpGroup(),
+    ]);
+    expect(groups).toEqual([
+      ["statusline", "Live:"],
+      ["watch", "Live:"],
+      ["sessions", "Reports:"],
+      ["view", "Reports:"],
+      ["doctor", "Reports:"],
+    ]);
+  });
+
+  // The dashboard and view --follow are features without a command of
+  // their own, so the grouped list cannot mention them.
+  it("documents the two features that are not commands", () => {
+    // Via outputHelp, not helpInformation: the trailing text is added
+    // by an addHelpText hook, which only the former runs.
+    const program = buildProgram();
+    let help = "";
+    program.configureOutput({
+      writeOut: (chunk) => {
+        help += chunk;
+      },
+    });
+    program.outputHelp();
+    expect(help).toContain("Live:");
+    expect(help).toContain("Reports:");
+    expect(help).toContain("Run with no command for the dashboard");
+    expect(help).toContain("view --follow");
   });
 
   it("is named ccprism", () => {

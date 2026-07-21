@@ -211,15 +211,30 @@ telemetry, no config file, no state; uninstall leaves zero trace.
 
 ### Commands
 
+Split by what they are for: **live** commands run beside a session in
+progress, **reports** read sessions that already exist. `--help` shows the
+same two groups.
+
 ```
+Live:
+ccprism statusline         cost, context, and rate limit panel for statusLine
+ccprism watch [id]         tail a session, stream cost as it changes
+ccprism view --follow      the transcript, appended live as the session grows
+
+Reports:
 ccprism                    dashboard: today / week, per project & model
 ccprism sessions           recent sessions: cost, duration, turns, model
 ccprism view [id]          transcript (latest session if id omitted)
-ccprism view --follow      the same, appended live as the session grows
-ccprism statusline         one line for Claude Code's custom statusLine
-ccprism watch [id]         tail a session, stream cost as it changes
 ccprism doctor             parse health: skipped lines, unknown model IDs
 ```
+
+Two of those are features rather than commands and so cannot appear in a
+grouped command list: the bare `ccprism` dashboard, and `view --follow`. Both
+are covered by trailing help text instead.
+
+Commander orders help groups by **first registration**, so the live commands
+are declared first in `buildProgram`. Declaration order is load bearing;
+moving those blocks reorders the help. A test pins it.
 
 Phase 3 adds `view --markdown`; later, `find <query>`.
 
