@@ -156,8 +156,8 @@ Requirements:
 |---|---|
 | User message | **bold + cyan**, `●` gutter, dim timestamp right of marker. Loudest thing on screen — these are the scan anchors. |
 | Claude prose | **unstyled default.** Body text is the baseline everything else is relative to. |
-| Thinking | dim + italic, collapsed to first line + `(… N lines)` |
-| Tool call | colored glyph per family (`⚡` bash, `✎` edit/write, `⌕` read/grep, `⛁` web), **description bold**, raw command dim on next line with `└` connector |
+| Thinking | dim + italic, collapsed to a `⋮ thinking (N lines)` label (the glyph already signals hidden content); full text only with `--full` |
+| Tool call | colored glyph per family (`⚡` bash, `✎` edit/write, `⌕` read/grep, `⛁` web), **description bold**, raw command dim on next line with `└` connector. Path labels truncate from the **front**, keeping the file name (`…/memory/phase-status.md`); prose/commands truncate from the end |
 | Tool result | dim, truncated ~3 lines; **errors: red, fully expanded** |
 | Cost/meta | dim badges at turn boundaries (`· 1.8k out · $0.04`); inverse-video chips in session header |
 | Separation | blank line between turns; dim `─` rule at session boundaries only; 2-space hanging indent so wraps clear the gutter |
@@ -178,7 +178,7 @@ Requirements:
      └ echo $TERM_PROGRAM; ls ~/.zshrc …
   ✎ ~/.zshrc  (+3 −0)
 
-  ⋮ thinking (… 12 lines)
+  ⋮ thinking (12 lines)
 
   Done — your terminal now shows the session title.
 

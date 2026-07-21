@@ -120,6 +120,7 @@ function ctx(overrides: Partial<RenderContext> = {}): RenderContext {
     g: glyphsFor(false),
     width: 60,
     italic: false,
+    color: false,
     full: false,
     costs: false,
     cwd: undefined,
@@ -143,7 +144,7 @@ function render(
 describe("renderHeader", () => {
   it("shows id, model, cost, turns, and duration", () => {
     const line = renderHeader(summary(), ctx());
-    expect(line).toBe("─ session 3ab55ea1 ─  opus-4-8 ·  $0.42  · 14 turns · 6m");
+    expect(line).toBe("─ session 3ab55ea1 ─  opus-4-8 · $0.42 · 14 turns · 6m");
   });
 
   it("marks the cost unknown when a model has no pricing", () => {
@@ -214,11 +215,26 @@ describe("renderTranscript", () => {
     expect(lines).toContain("  ✎ src/a.ts  (+3 -1)");
   });
 
+  it("truncates a long read path from the front, keeping the file name", () => {
+    const lines = render(
+      session([
+        user("go"),
+        call("Read", "t1", {
+          file_path: "/very/deeply/nested/directory/tree/importantfile.ts",
+        }),
+      ]),
+      { width: 30 },
+    );
+    const readLine = lines.find((line) => line.includes("importantfile.ts"));
+    expect(readLine).toBeDefined();
+    expect(readLine).toContain("…");
+  });
+
   it("collapses thinking to a labeled count", () => {
     const lines = render(
       session([user("go"), thinking("m1", "a\nb\nc")]),
     );
-    expect(lines).toContain("  ⋮ thinking (… 3 lines)");
+    expect(lines).toContain("  ⋮ thinking (3 lines)");
   });
 
   it("previews bash output and hides read output", () => {

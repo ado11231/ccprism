@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ASCII_GLYPHS, UNICODE_GLYPHS, glyphsFor } from "../src/render/glyphs.js";
 import { supportsItalic, supportsTruecolor } from "../src/render/style.js";
-import { contentWidth, displayWidth, wrapPlain } from "../src/render/text.js";
+import {
+  contentWidth,
+  displayWidth,
+  truncate,
+  truncatePath,
+  wrapPlain,
+} from "../src/render/text.js";
 
 describe("displayWidth", () => {
   it("counts plain ascii by character", () => {
@@ -55,6 +61,47 @@ describe("wrapPlain", () => {
 
   it("returns unwrapped lines when the width is zero or negative", () => {
     expect(wrapPlain("aaa bbb\nccc", 0)).toEqual(["aaa bbb", "ccc"]);
+  });
+});
+
+describe("truncate", () => {
+  it("leaves text that fits untouched", () => {
+    expect(truncate("short", 10, "…")).toBe("short");
+  });
+
+  it("cuts from the end and marks it, keeping the head", () => {
+    expect(truncate("abcdefgh", 5, "…")).toBe("abcd…");
+  });
+
+  it("measures the ellipsis against the width budget", () => {
+    expect(displayWidth(truncate("abcdefgh", 5, "..."))).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("truncatePath", () => {
+  it("leaves a path that fits untouched", () => {
+    expect(truncatePath("src/a.ts", 20, "…")).toBe("src/a.ts");
+  });
+
+  it("keeps the basename and cuts leading directories", () => {
+    const out = truncatePath("a/very/long/path/to/file.ts", 16, "…");
+    expect(out).toContain("file.ts");
+    expect(out.startsWith("…")).toBe(true);
+    expect(displayWidth(out)).toBeLessThanOrEqual(16);
+  });
+
+  it("keeps whole trailing segments, cutting on a separator", () => {
+    // "path/to/file.ts" stays whole rather than "…th/to/file.ts".
+    expect(truncatePath("a/very/long/path/to/file.ts", 18, "…")).toBe(
+      "…/path/to/file.ts",
+    );
+  });
+
+  it("front-cuts the basename when even it will not fit", () => {
+    const out = truncatePath("some/directory/verylongfilename.ts", 10, "…");
+    expect(out.startsWith("…")).toBe(true);
+    expect(out).not.toContain("/");
+    expect(displayWidth(out)).toBeLessThanOrEqual(10);
   });
 });
 

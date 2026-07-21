@@ -12,7 +12,7 @@ import {
 } from "./format.js";
 import type { GlyphSet } from "./glyphs.js";
 import type { Style } from "./style.js";
-import { displayWidth, wrapPlain } from "./text.js";
+import { displayWidth, truncate, truncatePath, wrapPlain } from "./text.js";
 import type {
   AssembledTranscript,
   ToolItem,
@@ -31,6 +31,9 @@ export interface RenderContext {
   g: GlyphSet;
   width: number;
   italic: boolean;
+  // Whether color is on. Only affects the few places a style needs
+  // different plain and colored shapes, like the header cost chip.
+  color: boolean;
   // Expand raw commands, tool outputs, thinking, and meta lines.
   full: boolean;
   // Per call cost badges on tool lines.
@@ -59,20 +62,6 @@ function twoSided(
   if (plainRight === "") return styledLeft;
   const gap = width - displayWidth(plainLeft) - displayWidth(plainRight);
   return styledLeft + " ".repeat(Math.max(gap, 1)) + styledRight;
-}
-
-function truncate(text: string, width: number, ellipsis: string): string {
-  if (displayWidth(text) <= width) return text;
-  const room = width - displayWidth(ellipsis);
-  let out = "";
-  let used = 0;
-  for (const char of text) {
-    const charWidth = displayWidth(char);
-    if (used + charWidth > room) break;
-    out += char;
-    used += charWidth;
-  }
-  return `${out}${ellipsis}`;
 }
 
 function toolColor(c: Style, category: ToolCategory): (text: string) => string {
@@ -109,6 +98,12 @@ function lineCount(text: unknown): number {
 
 interface ToolLabel {
   label: string;
+  // A trailing fragment kept whole while the label truncates, like an
+  // edit's line delta. Undefined means none.
+  suffix: string | undefined;
+  // The label is a path, so truncate from the front to keep the file
+  // name rather than the leading directories.
+  isPath: boolean;
   // Raw text for the connector line under the label. Undefined means
   // there is nothing beneath.
   detail: string | undefined;
@@ -130,14 +125,23 @@ function toolLabel(call: ToolCallEvent, cwd: string | undefined): ToolLabel {
   switch (category) {
     case "bash": {
       const command = str("command");
-      return { label: call.description ?? command ?? call.toolName, detail: command };
+      return {
+        label: call.description ?? command ?? call.toolName,
+        suffix: undefined,
+        isPath: false,
+        detail: command,
+      };
     }
     case "edit": {
-      if (path === undefined) return { label: call.toolName, detail: undefined };
+      if (path === undefined) {
+        return { label: call.toolName, suffix: undefined, isPath: false, detail: undefined };
+      }
       const added = lineCount(input.new_string ?? input.content);
       const removed = lineCount(input.old_string);
       return {
-        label: `${shortenPath(path, cwd)}  (+${added} -${removed})`,
+        label: shortenPath(path, cwd),
+        suffix: `(+${added} -${removed})`,
+        isPath: true,
         detail: undefined,
       };
     }
@@ -145,19 +149,21 @@ function toolLabel(call: ToolCallEvent, cwd: string | undefined): ToolLabel {
       const target = path ?? str("pattern") ?? str("path");
       return {
         label: target === undefined ? call.toolName : shortenPath(target, cwd),
+        suffix: undefined,
+        isPath: target !== undefined && target.includes("/"),
         detail: undefined,
       };
     }
     case "web": {
       const target = str("url") ?? str("query");
-      return { label: target ?? call.toolName, detail: undefined };
+      return { label: target ?? call.toolName, suffix: undefined, isPath: false, detail: undefined };
     }
     case "agents": {
       const label = str("description") ?? str("subagent_type") ?? call.toolName;
-      return { label, detail: str("prompt") };
+      return { label, suffix: undefined, isPath: false, detail: str("prompt") };
     }
     default:
-      return { label: call.toolName, detail: undefined };
+      return { label: call.toolName, suffix: undefined, isPath: false, detail: undefined };
   }
 }
 
@@ -181,9 +187,12 @@ export function renderHeader(
   ].filter((part): part is string => part !== undefined);
 
   // The cost is the one inverse video chip, per the design's header
-  // spec. Everything else in the header stays plain or dim.
+  // spec. The padding inside the chip only reads as a chip when it
+  // has a background, so plain output drops it to avoid stray double
+  // spaces. Everything else in the header stays plain or dim.
+  const chip = ctx.color ? c.inverse(` ${cost} `) : cost;
   const styledParts = parts
-    .map((part) => (part === cost ? c.inverse(` ${part} `) : part))
+    .map((part) => (part === cost ? chip : part))
     .join(` ${c.dim(g.dot)} `);
   const left = `${c.dim(g.rule)} session ${c.bold(shortId(summary.sessionId))} ${c.dim(g.rule)}`;
   return styledParts === "" ? left : `${left}  ${styledParts}`;
@@ -285,8 +294,18 @@ function renderToolItem(item: ToolItem, depth: number, ctx: RenderContext, out: 
   const color = toolColor(c, category);
   const available = ctx.width - depth * 2;
 
-  const { label, detail } = toolLabel(item.call, ctx.cwd);
-  const labelText = truncate(label, available - displayWidth(glyph) - 1 - 8, g.ellipsis);
+  const { label, suffix, isPath, detail } = toolLabel(item.call, ctx.cwd);
+  const suffixText = suffix === undefined ? "" : `  ${suffix}`;
+  // Reserve room for the kept suffix, and for a right aligned cost
+  // badge only when --costs will actually draw one, so labels get the
+  // full width in the common case.
+  const badgeReserve = ctx.costs ? 8 : 0;
+  const room =
+    available - displayWidth(glyph) - 1 - badgeReserve - displayWidth(suffixText);
+  const truncated = isPath
+    ? truncatePath(label, room, g.ellipsis)
+    : truncate(label, room, g.ellipsis);
+  const labelText = `${truncated}${suffixText}`;
   const plainLeft = `${base}${glyph} ${labelText}`;
   const styledLeft = `${base}${color(glyph)} ${c.bold(labelText)}`;
   const badge = ctx.costs && item.usd !== undefined ? fmtUsd(item.usd) : "";
@@ -332,10 +351,12 @@ function renderItem(item: TurnItem, depth: number, ctx: RenderContext, out: stri
         out.push(thinkingStyle(ctx, `${base}${line}`.trimEnd()));
       }
     } else {
+      // The thinking glyph already signals collapsed content, so the
+      // label just carries the line count, no leading ellipsis.
       out.push(
         thinkingStyle(
           ctx,
-          `${base}${ctx.g.thinking} thinking (${ctx.g.ellipsis} ${lines.length} ${lines.length === 1 ? "line" : "lines"})`,
+          `${base}${ctx.g.thinking} thinking (${lines.length} ${lines.length === 1 ? "line" : "lines"})`,
         ),
       );
     }

@@ -74,6 +74,7 @@ export async function runView(flags: ViewFlags): Promise<number> {
       g: glyphsFor(flags.ascii),
       width: contentWidth(),
       italic: enabled && supportsItalic(),
+      color: enabled,
       full: flags.full,
       costs: flags.costs,
       cwd: parsed.session.meta.cwd,
