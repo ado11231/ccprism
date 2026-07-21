@@ -3,7 +3,9 @@ import { summarizeSession } from "../cost/aggregate.js";
 import {
   defaultProjectsRoot,
   discoverSessionFiles,
+  type SessionFile,
 } from "../parser/discover.js";
+import type { ExtractedSession } from "../parser/events.js";
 import { parseSessionFile } from "../parser/session.js";
 import { glyphsFor } from "../render/glyphs.js";
 import {
@@ -14,6 +16,7 @@ import {
 import { contentWidth } from "../render/text.js";
 import { renderTranscript, type RenderContext } from "../render/transcript.js";
 import { assembleTranscript } from "../render/turns.js";
+import { runFollow, type FollowOptions } from "./follow.js";
 import type { CommandFlags } from "./load.js";
 
 export interface ViewFlags extends CommandFlags {
@@ -21,9 +24,20 @@ export interface ViewFlags extends CommandFlags {
   full: boolean;
   costs: boolean;
   ascii: boolean;
+  follow: boolean;
 }
 
-export async function runView(flags: ViewFlags): Promise<number> {
+type Target =
+  | { file: SessionFile; session: ExtractedSession }
+  | { code: number };
+
+// Picks the session to render: the id prefix when given, the newest
+// otherwise. Files are parsed newest first, one at a time, so the
+// common case touches a single file. Without an explicit id, files
+// that hold no conversation are skipped. Claude Code writes stub
+// files with only bookkeeping lines, and the newest file is often
+// one.
+async function resolveTarget(flags: ViewFlags): Promise<Target> {
   const files = await discoverSessionFiles(flags.root ?? defaultProjectsRoot());
 
   let candidates = files;
@@ -35,57 +49,78 @@ export async function runView(flags: ViewFlags): Promise<number> {
       for (const file of candidates.slice(0, 10)) {
         console.error(`  ${file.sessionId}`);
       }
-      return 1;
+      return { code: 1 };
     }
   }
 
   const wantedCwd =
     flags.project === undefined ? undefined : resolve(flags.project);
 
-  // Newest first, parsing one file at a time so the common case
-  // touches a single file. Without an explicit id, files that hold
-  // no conversation are skipped. Claude Code writes stub files with
-  // only bookkeeping lines, and the newest file is often one.
   for (const file of candidates) {
     const parsed = await parseSessionFile(file.filePath);
-    const summary = summarizeSession(file, parsed.session);
-    if (wantedCwd !== undefined && summary.cwd !== wantedCwd) continue;
-    if (flags.id === undefined && parsed.session.events.length === 0) continue;
-
-    const assembled = assembleTranscript(parsed.session);
-    if (flags.json) {
-      console.log(
-        JSON.stringify(
-          {
-            summary,
-            turns: assembled.turns,
-            orphanSidechains: assembled.orphanSidechains,
-            stats: assembled.stats,
-          },
-          null,
-          2,
-        ),
-      );
-      return 0;
+    if (wantedCwd !== undefined) {
+      const summary = summarizeSession(file, parsed.session);
+      if (summary.cwd !== wantedCwd) continue;
     }
-    const enabled = colorEnabled(flags.color);
-    const ctx: RenderContext = {
-      c: makeStyle(enabled),
-      g: glyphsFor(flags.ascii),
-      width: contentWidth(),
-      italic: enabled && supportsItalic(),
-      color: enabled,
-      full: flags.full,
-      costs: flags.costs,
-      cwd: parsed.session.meta.cwd,
-      now: new Date(),
-    };
-    console.log(renderTranscript(assembled, summary, ctx).join("\n"));
-    return 0;
+    if (flags.id === undefined && parsed.session.events.length === 0) continue;
+    return { file, session: parsed.session };
   }
 
   console.error(
     flags.id === undefined ? "no sessions found" : `no session matching ${flags.id}`,
   );
-  return 2;
+  return { code: 2 };
+}
+
+export async function runView(
+  flags: ViewFlags,
+  options: FollowOptions = {},
+): Promise<number> {
+  const target = await resolveTarget(flags);
+  if ("code" in target) return target.code;
+  const { file, session } = target;
+
+  if (flags.json) {
+    if (flags.follow) {
+      console.error("--follow has no --json output yet");
+      return 2;
+    }
+    const assembled = assembleTranscript(session);
+    console.log(
+      JSON.stringify(
+        {
+          summary: summarizeSession(file, session),
+          turns: assembled.turns,
+          orphanSidechains: assembled.orphanSidechains,
+          stats: assembled.stats,
+        },
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
+
+  const enabled = colorEnabled(flags.color);
+  // Width and the clock are read once. Follow mode prints the
+  // difference against what it printed last pass, so anything that
+  // feeds a rendered line has to hold still for the whole run.
+  const ctx: RenderContext = {
+    c: makeStyle(enabled),
+    g: glyphsFor(flags.ascii),
+    width: contentWidth(),
+    italic: enabled && supportsItalic(),
+    color: enabled,
+    full: flags.full,
+    costs: flags.costs,
+    cwd: session.meta.cwd,
+    now: new Date(),
+  };
+
+  if (flags.follow) return await runFollow(file, ctx, options);
+
+  const assembled = assembleTranscript(session);
+  const summary = summarizeSession(file, session);
+  console.log(renderTranscript(assembled, summary, ctx).join("\n"));
+  return 0;
 }

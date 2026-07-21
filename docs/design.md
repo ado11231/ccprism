@@ -215,6 +215,7 @@ telemetry, no config file, no state; uninstall leaves zero trace.
 ccprism                    dashboard: today / week, per project & model
 ccprism sessions           recent sessions: cost, duration, turns, model
 ccprism view [id]          transcript (latest session if id omitted)
+ccprism view --follow      the same, appended live as the session grows
 ccprism statusline         one line for Claude Code's custom statusLine
 ccprism watch [id]         tail a session, stream cost as it changes
 ccprism doctor             parse health: skipped lines, unknown model IDs
@@ -293,6 +294,48 @@ trailing line, so a mid-append snapshot is safe) and prints only when the cost
 line differs from the last — the clock is excluded from that comparison, so an
 unchanged session stays quiet however often the file is touched.
 
+#### `view --follow`
+
+The organized chat, pointed at a session that is still being written. It
+renders what exists, then appends turns as they arrive, so a split pane beside
+`claude` shows the conversation in the readable form instead of the TUI's.
+(Rendering *inside* Claude Code is not possible — it owns its TUI, and
+`statusLine` is the only extension point.)
+
+Like `watch`, it is an **append log**: a printed line is final, nothing is ever
+redrawn. That constraint decides the whole design, because three things in a
+static render mutate after the fact:
+
+- **Unfinished tool calls.** The log is appended in causal order, but a message
+  with parallel calls writes both calls before either result, while the
+  renderer draws each result under its own call. So each pass emits only the
+  *settled* prefix: all turns but the last, plus the last turn's items up to
+  the first call still waiting on its result. Earlier turns are settled whole —
+  a call interrupted in a finished turn will never resolve, and waiting on it
+  would freeze the stream.
+- **The turn cost badge.** A turn's cost is not known until the turn ends, so
+  the badge moves off the Claude anchor onto a **closing line**, right-aligned
+  and dim, printed when the turn settles. A badge on the anchor would sit on
+  screen reading `$0.03` for a turn that ends at `$0.40`.
+- **The clock and the terminal width.** Both are read once at startup; a
+  relative timestamp that ticks would silently rewrite a printed line.
+
+The header follows the same honesty rule: it opens with identity only
+(`── session 52e94664 ──  opus-4-8 · live`) and the totals are printed as a
+closing line when the stream ends, where they are finally true.
+
+Each pass renders the settled transcript and prints whatever is past the end
+of the previous render. That render is *almost* a monotone function of the
+log, not quite: the tree resolver extends the branch forward past the leaf,
+guessing that the newest sibling wins, and a later `last-prompt` line can name
+a leaf on the other side of a fork. When the new render is not an extension of
+what is on screen, the honest move is the only one available — say so
+(`… transcript changed, lines above are stale`) and print the branch that won.
+Measured against a replayed real session this fires on under 5% of passes.
+
+`--json` is not supported with `--follow` yet (exit 2); the natural shape is
+NDJSON, one object per settled turn.
+
 ### Flags
 
 Global (every command):
@@ -306,7 +349,8 @@ Global (every command):
 | `--since <date>` / `--until <date>` | time window for metrics |
 
 `view` only: `--full` (expand raw commands, tool outputs, thinking),
-`--markdown` (Phase 3), `--costs` (per-message cost badges).
+`--markdown` (Phase 3), `--costs` (per-message cost badges), `-f/--follow`
+(keep appending turns as the session grows).
 
 `sessions` only: `--limit <n>` (default 20, 0 shows all).
 

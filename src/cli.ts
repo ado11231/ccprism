@@ -18,6 +18,7 @@ interface RawOpts {
   limit?: string;
   full?: boolean;
   costs?: boolean;
+  follow?: boolean;
 }
 
 function toFlags(opts: RawOpts): CommandFlags {
@@ -73,6 +74,7 @@ export function buildProgram(): Command {
     .argument("[id]", "session id, unambiguous prefixes accepted")
     .option("--full", "expand raw commands, tool outputs, and thinking")
     .option("--costs", "per call cost badges on tool lines")
+    .option("-f, --follow", "keep appending turns as the session grows")
     .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
       const opts = command.optsWithGlobals() as RawOpts;
       process.exitCode = await runView({
@@ -81,6 +83,7 @@ export function buildProgram(): Command {
         full: opts.full === true,
         costs: opts.costs === true,
         ascii: opts.ascii === true,
+        follow: opts.follow === true,
       });
     });
 

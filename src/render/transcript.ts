@@ -38,6 +38,10 @@ export interface RenderContext {
   full: boolean;
   // Per call cost badges on tool lines.
   costs: boolean;
+  // Follow mode moves a turn's cost badge off the Claude anchor and
+  // onto a closing line. A live turn's cost is not known when its
+  // anchor prints, and a printed line can never be corrected.
+  deferTurnBadge?: boolean;
   cwd: string | undefined;
   now: Date;
 }
@@ -90,6 +94,13 @@ function shortenPath(path: string, cwd: string | undefined): string {
   const home = homedir();
   if (path.startsWith(`${home}/`)) return `~${path.slice(home.length)}`;
   return path;
+}
+
+// First line of a possibly multi line string, marked when there was
+// more.
+function firstLine(text: string, ellipsis: string): string {
+  const cut = text.indexOf("\n");
+  return cut === -1 ? text : `${text.slice(0, cut)} ${ellipsis}`;
 }
 
 function lineCount(text: unknown): number {
@@ -171,20 +182,32 @@ function thinkingStyle(ctx: RenderContext, text: string): string {
   return ctx.italic ? ctx.c.dim(ctx.c.italic(text)) : ctx.c.dim(text);
 }
 
+// numbers off drops the cost, turn count, and duration and marks the
+// session live. Follow mode opens with that: the totals are true for
+// about a second, and a stale total at the top of a growing
+// transcript is worse than no total. The same header with the
+// numbers on closes the stream, where they are finally true.
 export function renderHeader(
   summary: SessionSummary,
   ctx: RenderContext,
+  numbers = true,
 ): string {
   const { c, g } = ctx;
   const models = summary.models.map(shortModel).join(", ");
   const cost =
     summary.total.unknownModels.length > 0 ? "$?" : fmtUsd(summary.total.usd);
-  const parts = [
-    models === "" ? undefined : models,
-    cost,
-    `${summary.turns} ${summary.turns === 1 ? "turn" : "turns"}`,
-    summary.durationMs === undefined ? undefined : fmtDuration(summary.durationMs),
-  ].filter((part): part is string => part !== undefined);
+  const parts = numbers
+    ? [
+        models === "" ? undefined : models,
+        cost,
+        `${summary.turns} ${summary.turns === 1 ? "turn" : "turns"}`,
+        summary.durationMs === undefined
+          ? undefined
+          : fmtDuration(summary.durationMs),
+      ].filter((part): part is string => part !== undefined)
+    : [models === "" ? undefined : models, "live"].filter(
+        (part): part is string => part !== undefined,
+      );
 
   // The cost is the one inverse video chip, per the design's header
   // spec. The padding inside the chip only reads as a chip when it
@@ -192,7 +215,10 @@ export function renderHeader(
   // spaces. Everything else in the header stays plain or dim.
   const chip = ctx.color ? c.inverse(` ${cost} `) : cost;
   const styledParts = parts
-    .map((part) => (part === cost ? chip : part))
+    .map((part) => {
+      if (numbers && part === cost) return chip;
+      return part === "live" ? c.dim(part) : part;
+    })
     .join(` ${c.dim(g.dot)} `);
   const left = `${c.dim(g.rule)} session ${c.bold(shortId(summary.sessionId))} ${c.dim(g.rule)}`;
   return styledParts === "" ? left : `${left}  ${styledParts}`;
@@ -238,15 +264,23 @@ function renderUserAnchor(
   }
 }
 
+// What a turn cost: tokens out and dollars, $? when any message in
+// it used a model with no pricing.
+function turnBadge(turn: Turn, ctx: RenderContext): string {
+  const parts: string[] = [];
+  if (turn.outputTokens > 0) parts.push(`${fmtTokens(turn.outputTokens)} out`);
+  parts.push(turn.usd === undefined ? "$?" : fmtUsd(turn.usd));
+  return parts.join(` ${ctx.g.dot} `);
+}
+
 function renderClaudeAnchor(turn: Turn, depth: number, ctx: RenderContext, out: string[]): void {
   const { c, g } = ctx;
   const plainLeft = `${pad(depth)}${g.claude} Claude`;
-  const badgeParts: string[] = [];
-  if (turn.outputTokens > 0) {
-    badgeParts.push(`${fmtTokens(turn.outputTokens)} out`);
+  if (ctx.deferTurnBadge === true) {
+    out.push(plainLeft);
+    return;
   }
-  badgeParts.push(turn.usd === undefined ? "$?" : fmtUsd(turn.usd));
-  const badge = badgeParts.join(` ${g.dot} `);
+  const badge = turnBadge(turn, ctx);
   out.push(
     twoSided(plainLeft, plainLeft, badge, c.dim(badge), ctx.width),
   );
@@ -294,7 +328,11 @@ function renderToolItem(item: ToolItem, depth: number, ctx: RenderContext, out: 
   const color = toolColor(c, category);
   const available = ctx.width - depth * 2;
 
-  const { label, suffix, isPath, detail } = toolLabel(item.call, ctx.cwd);
+  const { label: rawLabel, suffix, isPath, detail } = toolLabel(item.call, ctx.cwd);
+  // A label is always exactly one line. A bash call with no model
+  // written description falls back to the raw command, and a heredoc
+  // or a multi line script would otherwise spill past the layout.
+  const label = firstLine(rawLabel, g.ellipsis);
   const suffixText = suffix === undefined ? "" : `  ${suffix}`;
   // Reserve room for the kept suffix, and for a right aligned cost
   // badge only when --costs will actually draw one, so labels get the
@@ -404,6 +442,39 @@ function renderTurnList(
       previousKind = item.kind;
     }
   }
+}
+
+// The body of a followed transcript. Same shape as a static view
+// with the turn cost moved to a closing line, and it must stay a
+// monotone function of the session: given more of the same log it
+// may only add lines, never change one it already produced. Follow
+// mode prints the difference against what it printed last time, so
+// anything that mutates here would corrupt the output. The caller
+// keeps that promise by freezing width and the clock, and by passing
+// only settled turns.
+//
+// finalize renders the last turn's closing badge too, for the moment
+// the stream ends and the turn is known to be over.
+export function renderFollowBody(
+  turns: Turn[],
+  ctx: RenderContext,
+  finalize = false,
+): string[] {
+  const live: RenderContext = { ...ctx, deferTurnBadge: true };
+  const out: string[] = [];
+  turns.forEach((turn, index) => {
+    // Rendering one turn at a time into a shared array gives the same
+    // lines as rendering the list, blank line separators included.
+    renderTurnList([turn], 0, false, live, out);
+    const settled = finalize || index < turns.length - 1;
+    // A turn that drew no Claude anchor, because it is a bare prompt
+    // or holds only meta lines, gets no closing badge either.
+    const drew = turn.items.some((item) => item.kind !== "meta" || ctx.full);
+    if (!settled || !drew) return;
+    const badge = turnBadge(turn, ctx);
+    out.push(twoSided("", "", badge, ctx.c.dim(badge), ctx.width));
+  });
+  return out;
 }
 
 export function renderTranscript(

@@ -35,6 +35,7 @@ npm install -g ccprism
 ccprism            dashboard for today and this week, per project and model
 ccprism sessions   recent sessions with cost, duration, turns, and model
 ccprism view [id]  render a session transcript, latest session if id omitted
+ccprism view -f    the same, appended live as the session grows
 ccprism statusline one line of cost, context, and turns for the active session
 ccprism watch [id] tail a session and stream its cost as it changes
 ccprism doctor     parse health: skipped lines and unknown model ids
@@ -42,6 +43,19 @@ ccprism doctor     parse health: skipped lines and unknown model ids
 
 Every command supports `--json` for machine readable output. Color is
 stripped automatically when output is piped or when `NO_COLOR` is set.
+
+### Following a live session
+
+`ccprism view --follow` renders the session so far and then keeps appending
+turns as they arrive, which makes a readable split pane beside `claude`:
+
+```bash
+ccprism view --follow
+```
+
+It never redraws a printed line. Turns appear once they settle, each closed by
+a dim right-aligned cost, and the session totals print when you stop it with
+ctrl-c. `--json` is not supported with `--follow` yet.
 
 ### Statusline
 

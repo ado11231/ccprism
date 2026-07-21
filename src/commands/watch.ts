@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { summarizeSession } from "../cost/aggregate.js";
 import {
@@ -9,6 +8,7 @@ import { parseSessionFile } from "../parser/session.js";
 import { fmtClock } from "../render/format.js";
 import { currentContext, statuslineText } from "../render/live.js";
 import { newestSessionPath, type CommandFlags } from "./load.js";
+import { pollFile, type PollOptions } from "./poll.js";
 
 // Tails one session and streams its cost as it changes. The design
 // is an append log, not a redraw in place: one timestamped line each
@@ -21,17 +21,8 @@ export interface WatchFlags extends CommandFlags {
   id: string | undefined;
 }
 
-export interface WatchOptions {
-  // One render then return, for tests and non interactive use. The
-  // real cli leaves this unset and loops until ctrl-c.
-  once?: boolean;
-  // Poll cadence in ms, overridable in tests.
-  intervalMs?: number;
+export interface WatchOptions extends PollOptions {
   now?: () => Date;
-  // A programmatic stop, in addition to ctrl-c. The cli never sets
-  // it; tests abort it to end the loop without raising SIGINT, which
-  // the test runner also listens for.
-  signal?: AbortSignal;
 }
 
 type Target = { filePath: string } | { code: number };
@@ -109,37 +100,16 @@ export async function runWatch(
   // Header goes to stderr so a redirect of stdout captures only the
   // cost lines.
   console.error(`watching ${basename(filePath)} — ctrl-c to stop`);
-  let last = await emit(filePath, undefined, now);
-  if (options.once === true) return 0;
 
-  return await new Promise<number>((resolvePromise) => {
-    let lastMtime = -1;
-    let lastSize = -1;
-    const timer = setInterval(async () => {
-      let info;
-      try {
-        info = await stat(filePath);
-      } catch {
-        return;
-      }
-      // Re-parse only when the file moved. A growing file is read
-      // whole each time; the streaming reader drops any half written
-      // trailing line, so a mid append snapshot is safe.
-      if (info.mtimeMs === lastMtime && info.size === lastSize) return;
-      lastMtime = info.mtimeMs;
-      lastSize = info.size;
+  // The poller re-reads only when the file moved. A growing file is
+  // read whole each time; the streaming reader drops any half written
+  // trailing line, so a mid append snapshot is safe.
+  let last: string | undefined;
+  return await pollFile(
+    filePath,
+    { ...options, onStop: () => console.error("") },
+    async () => {
       last = await emit(filePath, last, now);
-    }, options.intervalMs ?? 1000);
-
-    const stop = (): void => {
-      clearInterval(timer);
-      process.off("SIGINT", stop);
-      options.signal?.removeEventListener("abort", stop);
-      console.error("");
-      resolvePromise(0);
-    };
-    process.on("SIGINT", stop);
-    options.signal?.addEventListener("abort", stop, { once: true });
-    if (options.signal?.aborted === true) stop();
-  });
+    },
+  );
 }

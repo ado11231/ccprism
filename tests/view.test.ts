@@ -38,6 +38,7 @@ function flags(root: string, extra: Partial<ViewFlags> = {}): ViewFlags {
     full: false,
     costs: false,
     ascii: false,
+    follow: false,
     ...extra,
   };
 }

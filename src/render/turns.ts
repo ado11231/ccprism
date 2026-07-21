@@ -214,6 +214,27 @@ function assembleTurns(
   return turns;
 }
 
+// The part of a transcript that can no longer change, for follow
+// mode's append log. Only the last turn is live: once a newer user
+// message exists, everything before it is done, including a call
+// that was interrupted and never got its result.
+//
+// Inside the live turn the cut is at the first tool call still
+// waiting on its result. The log is appended in causal order, but a
+// message with parallel calls writes both calls before either
+// result, while the renderer draws each result under its own call.
+// Emitting a call before its result would leave nowhere to put that
+// result later except the wrong place.
+export function settledTurns(turns: Turn[]): Turn[] {
+  const last = turns[turns.length - 1];
+  if (last === undefined) return turns;
+  const cut = last.items.findIndex(
+    (item) => item.kind === "tool" && item.result === undefined,
+  );
+  if (cut === -1) return turns;
+  return [...turns.slice(0, -1), { ...last, items: last.items.slice(0, cut) }];
+}
+
 function rootTextOf(events: SessionEvent[]): string | undefined {
   for (const event of events) {
     if (event.kind === "user") return event.text;

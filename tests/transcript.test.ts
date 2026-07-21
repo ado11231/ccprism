@@ -324,3 +324,20 @@ describe("renderTranscript", () => {
     expect(lines.some((line) => line.includes("● prompt"))).toBe(true);
   });
 });
+
+describe("multi line tool labels", () => {
+  it("keeps a heredoc bash command on one line", () => {
+    const built = assembleTranscript(
+      session([
+        user("go"),
+        call("Bash", "t1", { command: "python3 - <<'EOF'\nimport re\nprint(1)" }),
+        result("t1", "1"),
+      ]),
+    );
+    const lines = renderTranscript(built, summary(), ctx());
+    const label = lines.find((line) => line.includes("python3"));
+    expect(label).toBeDefined();
+    expect(label).not.toContain("import re");
+    expect(lines.every((line) => !line.startsWith("import"))).toBe(true);
+  });
+});
