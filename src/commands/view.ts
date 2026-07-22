@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { summarizeSession } from "../cost/aggregate.js";
 import {
@@ -7,6 +8,8 @@ import {
 } from "../parser/discover.js";
 import type { ExtractedSession } from "../parser/events.js";
 import { parseSessionFile } from "../parser/session.js";
+import { EXPORT_WIDTH, toHtml, toMarkdown } from "../render/export.js";
+import { shortId } from "../render/format.js";
 import { glyphsFor } from "../render/glyphs.js";
 import {
   colorEnabled,
@@ -30,7 +33,14 @@ export interface ViewFlags extends CommandFlags {
   // follow, never a shape of the static render, since the static
   // render is already the compact one and --full is its expansion.
   compact: boolean;
+  // Write the transcript to a file instead of the terminal.
+  exportAs: ExportFormat | undefined;
+  // Where to write it. Undefined means ./<shortid>.<format>.
+  out: string | undefined;
 }
+
+export const EXPORT_FORMATS = ["md", "html"] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 // Both live modes poll, so they take the same options.
 export type ViewOptions = CompactOptions;
@@ -80,6 +90,52 @@ async function resolveTarget(flags: ViewFlags): Promise<Target> {
   return { code: 2 };
 }
 
+// Writes the transcript to a file. Markdown gets the plain render,
+// html gets the colored one converted to spans, so both come from the
+// same renderer the terminal uses and neither can drift from it.
+//
+// Width is fixed rather than read from the terminal: an exported file
+// outlives the window it was made in.
+async function runExport(
+  flags: ViewFlags,
+  format: ExportFormat,
+  file: SessionFile,
+  session: ExtractedSession,
+): Promise<number> {
+  const colored = format === "html";
+  const ctx: RenderContext = {
+    c: makeStyle(colored),
+    g: glyphsFor(flags.ascii),
+    width: EXPORT_WIDTH,
+    italic: colored,
+    color: colored,
+    full: flags.full,
+    costs: flags.costs,
+    cwd: session.meta.cwd,
+    now: new Date(),
+  };
+
+  const summary = summarizeSession(file, session);
+  const lines = renderTranscript(assembleTranscript(session), summary, ctx);
+  const text =
+    format === "md" ? toMarkdown(lines, summary) : toHtml(lines, summary);
+  const path = flags.out ?? `${shortId(summary.sessionId)}.${format}`;
+
+  try {
+    await writeFile(path, text, "utf8");
+  } catch (error) {
+    console.error(`could not write ${path}: ${(error as Error).message}`);
+    return 1;
+  }
+
+  if (flags.json) {
+    console.log(JSON.stringify({ path: resolve(path), format }));
+  } else {
+    console.log(`wrote ${path}`);
+  }
+  return 0;
+}
+
 export async function runView(
   flags: ViewFlags,
   options: ViewOptions = {},
@@ -103,6 +159,14 @@ export async function runView(
       return 2;
     }
     return await runCompact(file.filePath, options);
+  }
+
+  if (flags.exportAs !== undefined) {
+    if (flags.follow) {
+      console.error("--export writes a finished session, so it cannot follow");
+      return 2;
+    }
+    return await runExport(flags, flags.exportAs, file, session);
   }
 
   if (flags.json) {

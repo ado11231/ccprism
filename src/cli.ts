@@ -1,10 +1,18 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { version } from "../package.json";
 import { runDashboard } from "./commands/dashboard.js";
 import { runDoctor } from "./commands/doctor.js";
-import { runSessions } from "./commands/sessions.js";
+import {
+  runSessions,
+  SESSION_SORTS,
+  type SessionSort,
+} from "./commands/sessions.js";
 import { runStatusline } from "./commands/statusline.js";
-import { runView } from "./commands/view.js";
+import {
+  runView,
+  EXPORT_FORMATS,
+  type ExportFormat,
+} from "./commands/view.js";
 import type { CommandFlags } from "./commands/load.js";
 
 // Help group headings. Live commands run beside a session in
@@ -21,10 +29,15 @@ interface RawOpts {
   since?: string;
   until?: string;
   limit?: string;
+  sort?: SessionSort;
+  model?: string;
+  grep?: string;
   full?: boolean;
   costs?: boolean;
   follow?: boolean;
   compact?: boolean;
+  export?: ExportFormat;
+  output?: string;
 }
 
 function toFlags(opts: RawOpts): CommandFlags {
@@ -83,6 +96,13 @@ export function buildProgram(): Command {
     .helpGroup(REPORTS)
     .description("List recent sessions with cost, duration, turns, and model")
     .option("--limit <n>", "rows to show, 0 for all", "20")
+    .addOption(
+      new Option("--sort <field>", "order the rows, biggest first")
+        .choices([...SESSION_SORTS])
+        .default("time"),
+    )
+    .option("--model <text>", "only sessions that used a matching model")
+    .option("--grep <text>", "only sessions with a prompt containing this text")
     .action(async (_opts: RawOpts, command: Command) => {
       const opts = command.optsWithGlobals() as RawOpts;
       const limit = Number(opts.limit);
@@ -91,7 +111,13 @@ export function buildProgram(): Command {
         process.exitCode = 1;
         return;
       }
-      process.exitCode = await runSessions({ ...toFlags(opts), limit });
+      process.exitCode = await runSessions({
+        ...toFlags(opts),
+        limit,
+        sort: opts.sort ?? "time",
+        model: opts.model,
+        grep: opts.grep,
+      });
     });
 
   withGlobalFlags(program.command("view"))
@@ -99,19 +125,35 @@ export function buildProgram(): Command {
     .description("Render a session transcript, latest session if id omitted")
     .argument("[id]", "session id, unambiguous prefixes accepted")
     .option("--full", "expand raw commands, tool outputs, and thinking")
+    // Declared so --export can expand by default and still be told
+    // not to. With both forms registered, neither one given leaves the
+    // value unset, which is what tells them apart.
+    .option("--no-full", "keep the compact render when exporting")
     .option("--costs", "per call cost badges on tool lines")
     .option("-f, --follow", "keep appending turns as the session grows")
     .option("--compact", "with --follow, a cost log instead of the transcript")
+    .addOption(
+      new Option("--export <format>", "write the transcript to a file").choices([
+        ...EXPORT_FORMATS,
+      ]),
+    )
+    .option("-o, --output <path>", "where --export writes, default ./<id>.<format>")
     .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
       const opts = command.optsWithGlobals() as RawOpts;
+      const exportAs = opts.export;
       process.exitCode = await runView({
         ...toFlags(opts),
         id,
-        full: opts.full === true,
+        // An export is meant to be read on its own later, with nobody
+        // around to rerun it with --full, so it expands unless asked
+        // not to.
+        full: opts.full ?? exportAs !== undefined,
         costs: opts.costs === true,
         ascii: opts.ascii === true,
         follow: opts.follow === true,
         compact: opts.compact === true,
+        exportAs,
+        out: opts.output,
       });
     });
 
@@ -142,6 +184,8 @@ export function buildProgram(): Command {
         ascii: opts.ascii === true,
         follow: true,
         compact: true,
+        exportAs: undefined,
+        out: undefined,
       });
     });
   program.addCommand(watch, { hidden: true });

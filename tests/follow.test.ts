@@ -277,6 +277,8 @@ function flags(root: string, extra: Partial<ViewFlags> = {}): ViewFlags {
     ascii: false,
     follow: true,
     compact: false,
+    exportAs: undefined,
+    out: undefined,
     ...extra,
   };
 }

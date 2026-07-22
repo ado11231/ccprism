@@ -52,6 +52,8 @@ function flags(root: string, extra: Partial<ViewFlags> = {}): ViewFlags {
     ascii: false,
     follow: true,
     compact: true,
+    exportAs: undefined,
+    out: undefined,
     ...extra,
   };
 }

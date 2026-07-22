@@ -1,4 +1,11 @@
-import { copyFile, mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +47,8 @@ function flags(root: string, extra: Partial<ViewFlags> = {}): ViewFlags {
     ascii: false,
     follow: false,
     compact: false,
+    exportAs: undefined,
+    out: undefined,
     ...extra,
   };
 }
@@ -125,6 +134,68 @@ describe("view", () => {
     expect(code).toBe(0);
     expect(logged()).toContain("* YOU");
     expect(logged()).not.toContain("●");
+  });
+
+  it("exports markdown to a file and says where it went", async () => {
+    const root = await makeRoot();
+    const out = join(root, "session.md");
+    const code = await runView(
+      flags(root, { id: "1111", exportAs: "md", out, full: true }),
+    );
+    expect(code).toBe(0);
+    expect(logged()).toContain("wrote");
+    const text = await readFile(out, "utf8");
+    expect(text).toContain("# session 13af1923");
+    expect(text).toContain("````text");
+    // Markdown is the plain render, so no escapes reach the file.
+    expect(text).not.toContain("[1m");
+  });
+
+  it("exports html with the color roles carried across", async () => {
+    const root = await makeRoot();
+    const out = join(root, "session.html");
+    const code = await runView(
+      flags(root, { id: "1111", exportAs: "html", out, full: true }),
+    );
+    expect(code).toBe(0);
+    const text = await readFile(out, "utf8");
+    expect(text.startsWith("<!doctype html>")).toBe(true);
+    expect(text).toContain("<span class=");
+    expect(text).not.toContain("[1m");
+  });
+
+  it("reports the written path as json", async () => {
+    const root = await makeRoot();
+    const out = join(root, "session.md");
+    const code = await runView(
+      flags(root, { id: "1111", exportAs: "md", out, json: true }),
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(logged())).toEqual({ path: out, format: "md" });
+  });
+
+  it("exits 1 when the path cannot be written", async () => {
+    const root = await makeRoot();
+    const code = await runView(
+      flags(root, {
+        id: "1111",
+        exportAs: "md",
+        out: join(root, "no", "such", "dir", "s.md"),
+      }),
+    );
+    expect(code).toBe(1);
+    expect(errored()).toContain("could not write");
+  });
+
+  // An export is a finished document, and a followed session has no
+  // end yet.
+  it("refuses to export a followed session", async () => {
+    const root = await makeRoot();
+    const code = await runView(
+      flags(root, { id: "1111", exportAs: "md", follow: true }),
+    );
+    expect(code).toBe(2);
+    expect(errored()).toContain("cannot follow");
   });
 
   it("shows more with --full than without", async () => {
