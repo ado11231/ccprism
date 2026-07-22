@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 
-// Shared file follower for the live commands. watch and view
-// --follow both work the same way: stat one file on an interval and
+// Shared file follower for the live commands. Both modes of view
+// --follow work the same way: stat one file on an interval and
 // do the work only when it actually moved. Polling rather than
 // fs.watch because the file is appended by another process and the
 // platform watchers coalesce and occasionally drop those events,

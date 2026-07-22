@@ -16,7 +16,8 @@ import {
 import { contentWidth } from "../render/text.js";
 import { renderTranscript, type RenderContext } from "../render/transcript.js";
 import { assembleTranscript } from "../render/turns.js";
-import { runFollow, type FollowOptions } from "./follow.js";
+import { runCompact, type CompactOptions } from "./compact.js";
+import { runFollow } from "./follow.js";
 import type { CommandFlags } from "./load.js";
 
 export interface ViewFlags extends CommandFlags {
@@ -25,7 +26,14 @@ export interface ViewFlags extends CommandFlags {
   costs: boolean;
   ascii: boolean;
   follow: boolean;
+  // The live cost log instead of the live transcript. Only a mode of
+  // follow, never a shape of the static render, since the static
+  // render is already the compact one and --full is its expansion.
+  compact: boolean;
 }
+
+// Both live modes poll, so they take the same options.
+export type ViewOptions = CompactOptions;
 
 type Target =
   | { file: SessionFile; session: ExtractedSession }
@@ -74,11 +82,28 @@ async function resolveTarget(flags: ViewFlags): Promise<Target> {
 
 export async function runView(
   flags: ViewFlags,
-  options: FollowOptions = {},
+  options: ViewOptions = {},
 ): Promise<number> {
+  if (flags.compact && !flags.follow) {
+    console.error(
+      "--compact is a mode of --follow, try: ccprism view --follow --compact",
+    );
+    return 2;
+  }
+
   const target = await resolveTarget(flags);
   if ("code" in target) return target.code;
   const { file, session } = target;
+
+  // The compact log is plain text with no transcript behind it, so it
+  // never builds a render context.
+  if (flags.follow && flags.compact) {
+    if (flags.json) {
+      console.error("--compact has no --json output yet");
+      return 2;
+    }
+    return await runCompact(file.filePath, options);
+  }
 
   if (flags.json) {
     if (flags.follow) {

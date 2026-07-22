@@ -2,7 +2,11 @@ import { copyFile, mkdir, mkdtemp, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { emptyRollup, type SessionSummary } from "../src/cost/aggregate.js";
+import {
+  emptyRollup,
+  type SessionSummary,
+  type TurnDelta,
+} from "../src/cost/aggregate.js";
 import {
   runStatusline,
   type StatuslineFlags,
@@ -122,9 +126,18 @@ describe("statuslineText", () => {
     expect(line).toContain("opus-4-8");
   });
 
+  // What turnDelta hands the renderer: only the fields it reads.
+  function delta(usd: number | undefined): TurnDelta {
+    return { usd, tokens: emptyRollup().tokens, messages: 1 };
+  }
+
   it("puts the cost delta next to the total", () => {
     const s = summary({ total: { ...emptyRollup(), usd: 0.23 } });
-    const line = statuslineText(s, { tokens: 27800, model: "claude-opus-4-8" }, 0.19);
+    const line = statuslineText(
+      s,
+      { tokens: 27800, model: "claude-opus-4-8" },
+      delta(0.04),
+    );
     expect(line).toBe("opus-4-8 · $0.23 · +$0.04 · 27.8k ctx · 3 turns");
   });
 
@@ -135,7 +148,7 @@ describe("statuslineText", () => {
       total: { ...emptyRollup(), usd: 0, unknownModels: ["mystery"] },
     });
     expect(
-      statuslineText(unknown, { tokens: 1, model: undefined }, 0.19),
+      statuslineText(unknown, { tokens: 1, model: undefined }, delta(0.04)),
     ).not.toContain("+$");
   });
 
@@ -144,7 +157,7 @@ describe("statuslineText", () => {
   it("omits a delta smaller than the printed total can show", () => {
     const s = summary({ total: { ...emptyRollup(), usd: 0.1901 } });
     expect(
-      statuslineText(s, { tokens: 1, model: undefined }, 0.19),
+      statuslineText(s, { tokens: 1, model: undefined }, delta(0.0001)),
     ).not.toContain("+$");
   });
 });

@@ -97,6 +97,46 @@ export function burnRatePerHour(
   return usd / (durationMs / 3_600_000);
 }
 
+// What moved between two readings of the same growing session. The
+// live compact log takes one of these per tick, and the Stop hook
+// takes one per turn, so the subtraction lives here rather than in
+// either renderer.
+//
+// usd is undefined when there is nothing honest to report: no earlier
+// reading to subtract, or a model with no pricing on either side. A
+// delta that carries a number always means real money moved.
+export interface TurnDelta {
+  usd: number | undefined;
+  tokens: TokenTotals;
+  messages: number;
+}
+
+export function turnDelta(
+  previous: UsageRollup | undefined,
+  current: UsageRollup,
+): TurnDelta {
+  if (previous === undefined) {
+    return {
+      usd: undefined,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+      messages: 0,
+    };
+  }
+  const priced =
+    previous.unknownModels.length === 0 && current.unknownModels.length === 0;
+  return {
+    usd: priced ? current.usd - previous.usd : undefined,
+    tokens: {
+      input: current.tokens.input - previous.tokens.input,
+      output: current.tokens.output - previous.tokens.output,
+      cacheRead: current.tokens.cacheRead - previous.tokens.cacheRead,
+      cacheWrite5m: current.tokens.cacheWrite5m - previous.tokens.cacheWrite5m,
+      cacheWrite1h: current.tokens.cacheWrite1h - previous.tokens.cacheWrite1h,
+    },
+    messages: current.messages - previous.messages,
+  };
+}
+
 export function rollupByKey(
   entries: Iterable<MessageUsage>,
   key: (entry: MessageUsage) => string | undefined,

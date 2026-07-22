@@ -100,7 +100,7 @@ export async function loadSessions(
 // The newest session that actually holds a conversation. Claude Code
 // writes stub files with only bookkeeping lines and the newest file
 // is often one, so those are skipped. Shared by the live commands
-// (statusline's fallback, watch's default target).
+// (statusline's fallback).
 export async function newestSessionPath(
   root: string,
 ): Promise<string | undefined> {

@@ -9,8 +9,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WatchFlags } from "../src/commands/watch.js";
-import { runWatch, sessionSnapshot } from "../src/commands/watch.js";
+import { sessionSnapshot } from "../src/commands/compact.js";
+import { runView, type ViewFlags } from "../src/commands/view.js";
 
 const FIXTURES = join(__dirname, "fixtures");
 const BASIC = join(FIXTURES, "basic.jsonl");
@@ -36,7 +36,9 @@ function errored(): string {
   return errorSpy.mock.calls.map((call) => call.join(" ")).join("\n");
 }
 
-function flags(root: string, extra: Partial<WatchFlags> = {}): WatchFlags {
+// The compact log is view --follow --compact. Every case here runs it
+// through view, which is the only way in now that watch is gone.
+function flags(root: string, extra: Partial<ViewFlags> = {}): ViewFlags {
   return {
     json: false,
     color: false,
@@ -45,6 +47,11 @@ function flags(root: string, extra: Partial<WatchFlags> = {}): WatchFlags {
     until: undefined,
     root,
     id: undefined,
+    full: false,
+    costs: false,
+    ascii: false,
+    follow: true,
+    compact: true,
     ...extra,
   };
 }
@@ -52,7 +59,7 @@ function flags(root: string, extra: Partial<WatchFlags> = {}): WatchFlags {
 const CLOCK = () => new Date("2026-07-20T19:53:02");
 
 async function makeRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "ccprism-watch-"));
+  const root = await mkdtemp(join(tmpdir(), "ccprism-compact-"));
   const project = join(root, "-scrubbed-project");
   await mkdir(project);
   const older = join(project, "22222222-aaaa-bbbb-cccc-000000000002.jsonl");
@@ -81,7 +88,7 @@ describe("sessionSnapshot", () => {
   it("keeps the cost delta out of the compared text", async () => {
     const snapshot = await sessionSnapshot(BASIC);
     expect(snapshot?.text).not.toContain("+$");
-    expect(typeof snapshot?.usd).toBe("number");
+    expect(typeof snapshot?.summary.total.usd).toBe("number");
   });
 
   it("yields a different line when the file's content changes", async () => {
@@ -157,7 +164,7 @@ describe("cost delta", () => {
   it("prints the per-turn cost beside the total as the session grows", async () => {
     const { root, file } = await growingRoot();
     const controller = new AbortController();
-    const run = runWatch(flags(root), {
+    const run = runView(flags(root), {
       intervalMs: 15,
       signal: controller.signal,
       now: CLOCK,
@@ -185,7 +192,7 @@ describe("cost delta", () => {
   it("stays quiet when a touched file's numbers did not move", async () => {
     const { root, file } = await growingRoot();
     const controller = new AbortController();
-    const run = runWatch(flags(root), {
+    const run = runView(flags(root), {
       intervalMs: 15,
       signal: controller.signal,
       now: CLOCK,
@@ -203,19 +210,29 @@ describe("cost delta", () => {
   });
 });
 
-describe("runWatch (once)", () => {
+describe("compact follow (once)", () => {
   it("prints one line for the newest session and a header on stderr", async () => {
     const root = await makeRoot();
-    const code = await runWatch(flags(root), { once: true, now: CLOCK });
+    const code = await runView(flags(root), { once: true, now: CLOCK });
     expect(code).toBe(0);
     expect(logged()).toMatch(/^\d\d:\d\d:\d\d {2}.*turns$/);
-    expect(errored()).toContain("watching");
+    expect(errored()).toContain("following");
     expect(errored()).toContain("ctrl-c");
+  });
+
+  // The static view is already the compact one, so --compact can only
+  // mean the live log. Saying so beats silently starting a follower.
+  it("refuses --compact without --follow", async () => {
+    const root = await makeRoot();
+    const code = await runView(flags(root, { follow: false }), { once: true });
+    expect(code).toBe(2);
+    expect(errored()).toContain("--compact is a mode of --follow");
+    expect(logged()).toBe("");
   });
 
   it("resolves a session by id prefix", async () => {
     const root = await makeRoot();
-    const code = await runWatch(flags(root, { id: "2222" }), {
+    const code = await runView(flags(root, { id: "2222" }), {
       once: true,
       now: CLOCK,
     });
@@ -231,13 +248,13 @@ describe("runWatch (once)", () => {
       "11111111-ffff-bbbb-cccc-000000000009.jsonl",
     );
     await copyFile(BASIC, extra);
-    const code = await runWatch(flags(root, { id: "1111" }), { once: true });
+    const code = await runView(flags(root, { id: "1111" }), { once: true });
     expect(code).toBe(1);
     expect(errored()).toContain("ambiguous");
   });
 
   it("exits 2 when nothing matches the id", async () => {
-    const code = await runWatch(flags(await makeRoot(), { id: "9999" }), {
+    const code = await runView(flags(await makeRoot(), { id: "9999" }), {
       once: true,
     });
     expect(code).toBe(2);
@@ -245,14 +262,14 @@ describe("runWatch (once)", () => {
   });
 
   it("exits 2 on an empty root", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ccprism-watch-empty-"));
-    const code = await runWatch(flags(root), { once: true });
+    const root = await mkdtemp(join(tmpdir(), "ccprism-compact-empty-"));
+    const code = await runView(flags(root), { once: true });
     expect(code).toBe(2);
     expect(errored()).toContain("no sessions found");
   });
 });
 
-describe("runWatch (streaming loop)", () => {
+describe("compact follow (streaming loop)", () => {
   async function waitFor(fn: () => boolean, timeoutMs = 2000): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -267,14 +284,14 @@ describe("runWatch (streaming loop)", () => {
   }
 
   it("appends a new line when the watched file changes, then stops on signal", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ccprism-watch-live-"));
+    const root = await mkdtemp(join(tmpdir(), "ccprism-compact-live-"));
     const project = join(root, "-scrubbed-project");
     await mkdir(project);
     const file = join(project, "11111111-aaaa-bbbb-cccc-000000000001.jsonl");
     await copyFile(COMPACT, file);
 
     const controller = new AbortController();
-    const run = runWatch(flags(root), {
+    const run = runView(flags(root), {
       intervalMs: 15,
       now: CLOCK,
       signal: controller.signal,

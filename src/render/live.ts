@@ -2,6 +2,7 @@ import {
   burnRatePerHour,
   cacheHitRatio,
   type SessionSummary,
+  type TurnDelta,
 } from "../cost/aggregate.js";
 import type { ExtractedSession } from "../parser/events.js";
 import { emptyHostFacts, type HostFacts } from "../parser/host.js";
@@ -10,8 +11,8 @@ import type { GlyphSet } from "./glyphs.js";
 import type { Style } from "./style.js";
 
 // Shared one-line renderer for the live surfaces: the statusline
-// (printed once per assistant message by Claude Code) and watch
-// (appended whenever a tailed session changes). Plain text on
+// (printed once per assistant message by Claude Code) and the compact
+// follow log (appended whenever a tailed session changes). Plain text on
 // purpose, both surfaces stream to stdout and the line has to read
 // with no styling.
 
@@ -260,30 +261,30 @@ export function statuslinePanel(
 // ccprism's own number so it matches view and the dashboard; it reads
 // $? when any model in the session has no pricing. The context segment
 // drops out before the first api call. Kept plain and on one line for
-// watch's append log, which pipes to a file.
+// the compact append log, which pipes to a file.
 //
-// previousUsd is the cost at the last line watch printed. The delta
-// sits next to the total so a scan down the log reads as both a
+// delta is what moved since the last line the compact log printed.
+// It sits next to the total so a scan down the log reads as both a
 // running total and the price of each turn. It is omitted on the first
 // line, when the cost is unknown, and when nothing was added, so a
 // delta in the log always means real money moved.
 export function statuslineText(
   summary: SessionSummary,
   context: CurrentContext,
-  previousUsd?: number,
+  change?: TurnDelta,
 ): string {
   const model = context.model ?? summary.models[summary.models.length - 1];
   const known = summary.total.unknownModels.length === 0;
-  const delta =
-    known && previousUsd !== undefined
-      ? summary.total.usd - previousUsd
-      : undefined;
+  const delta = change?.usd;
   const segments = [
     model === undefined ? undefined : shortModel(model),
     known ? fmtUsd(summary.total.usd) : "$?",
     // Rounded to the same two decimals as the total, so a delta only
-    // shows when it moves the printed number.
-    delta !== undefined && delta >= 0.005 ? `+${fmtUsd(delta)}` : undefined,
+    // shows when it moves the printed number. Gated on known too: a
+    // total reading $? must never sit beside a precise looking delta.
+    known && delta !== undefined && delta >= 0.005
+      ? `+${fmtUsd(delta)}`
+      : undefined,
     context.tokens > 0 ? `${fmtTokens(context.tokens)} ctx` : undefined,
     `${summary.turns} ${summary.turns === 1 ? "turn" : "turns"}`,
   ].filter((seg): seg is string => seg !== undefined);

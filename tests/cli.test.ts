@@ -7,11 +7,25 @@ describe("cli scaffold", () => {
     const names = program.commands.map((command) => command.name());
     expect(names).toEqual([
       "statusline",
-      "watch",
       "sessions",
       "view",
       "doctor",
+      // Hidden, kept only so the old name still works.
+      "watch",
     ]);
+  });
+
+  it("keeps watch as a hidden alias, out of the help", () => {
+    const program = buildProgram();
+    let help = "";
+    program.configureOutput({
+      writeOut: (chunk) => {
+        help += chunk;
+      },
+    });
+    program.outputHelp();
+    expect(help).not.toContain("watch");
+    expect(help).toContain("--compact");
   });
 
   // Commands are grouped in --help by what they are for, and commander
@@ -23,9 +37,9 @@ describe("cli scaffold", () => {
       command.name(),
       command.helpGroup(),
     ]);
-    expect(groups).toEqual([
+    // The hidden alias carries no group, so it drops out here.
+    expect(groups.filter(([, group]) => group !== "")).toEqual([
       ["statusline", "Live:"],
-      ["watch", "Live:"],
       ["sessions", "Reports:"],
       ["view", "Reports:"],
       ["doctor", "Reports:"],

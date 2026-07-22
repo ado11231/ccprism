@@ -55,6 +55,85 @@ Each phase ships something usable on its own.
 - npm publish (MIT license)
 - **Done when:** published, statusline works in your own daily setup.
 
+## Plugin plan (spec of 2026-07-21)
+
+Everything above stays. This is what comes next, and it supersedes the
+unshipped parts of Phase 3. The goal: keep the live terminal and the metrics
+as the core, tighten the command surface, and ship a Claude Code plugin layer
+so the whole thing lives inside a running `claude` session, with the report
+commands on the side. One binary, four integration surfaces.
+
+### P1. CLI surface cleanup (in progress)
+
+- `watch` merges into `view --follow --compact`. The old command stays as a
+  hidden alias that forwards and prints a deprecation note on stderr. Its
+  snapshot logic moves into a shared `turnDelta` helper in `cost/aggregate.ts`,
+  which the Stop hook in P3 needs too.
+- `sessions` gains `--sort cost|duration|turns|time`, `--model <substring>`,
+  and `--grep <text>` over user prompt text. A matched session shows a dim
+  snippet of the matching prompt under its row, so `sessions --grep` answers
+  "which session did I fix X in" and `view <id>` opens it.
+- `view` gains `--export md` and `--export html`, writing to `./<shortid>.md`
+  unless `-o` says otherwise. Export implies `--full`. The html is one file,
+  no scripts and no external assets.
+- The dashboard gains a per day row for the last 14 days with a small bar, and
+  a `--month` flag that widens today and this week to this month.
+- `statusline` reads `COLUMNS` and drops the rightmost fields per row at
+  narrow widths instead of wrapping.
+- `doctor` is unchanged.
+- **Done when:** the help fits one screen, the merged follow modes behave the
+  same as the commands they replace, and the new flags have tests.
+
+### P2. `ccprism context [id]`
+
+Answers "what is filling the context window right now". Attributes active
+branch tokens by origin: prompt overhead, file reads grouped per path, tool
+output by category, and conversation. Shows the window fill, then the top ten
+consumers with tokens, share of the window, and a bar. Files read more than
+once are flagged. Where the log only gives text, the count is estimated and
+marked with `~`, never presented as exact. `--json` and an optional `--watch`.
+`view --follow` picks up a one line context summary when fill crosses 50, 80,
+and 90 percent.
+
+This is the feature that makes people pick ccprism over a pure cost reporter.
+
+### P3. Hooks
+
+A hidden `ccprism hook <event>` reads the hook JSON on stdin, resolves the
+session through `transcript_path`, and dispatches per event: Stop prints the
+turn cost delta and the new fill, plus a warning naming the top three
+consumers when fill crosses a threshold; PostToolUse warns when a result added
+more tokens than the threshold; SessionEnd prints a receipt. Every failure
+path prints nothing and exits 0, the same rule the statusline follows.
+
+Config without a config file: `CCPRISM_WARN_TOOL_TOKENS`,
+`CCPRISM_WARN_CONTEXT` (default `80,90`), and `CCPRISM_HOOKS=off`. Threshold
+warnings fire once per session by comparing the previous fill read back from
+the transcript, never by writing state.
+
+Read the hooks reference at code.claude.com/docs/en/hooks before building
+this. The JSON schemas and the visible output channel per event are not
+things to guess.
+
+### P4. Slash commands, packaging, install
+
+`/prism`, `/prism:context`, `/prism:last`, and `/prism:session` as thin
+wrappers that run the CLI with `--no-color`. A `plugin/` directory in the repo
+holds the manifest, hook registrations, command files, and the statusline
+entry, so it installs as one plugin. For people not using plugins,
+`ccprism install` and `ccprism uninstall` write and remove the same entries in
+`~/.claude`, printing every path they touch.
+
+This amends the read only promise, on purpose: ccprism never writes outside
+its install unless you run `ccprism install`.
+
+### P5. MCP server (optional, last)
+
+`ccprism mcp`, a stdio server exposing read only `get_session_cost`,
+`get_context_breakdown`, `get_wasted_spend`, and `search_sessions(query)`, so
+Claude itself can notice that context is mostly stale file reads and act on
+it. Only after P1 through P4 are stable.
+
 ## Statusline metric backlog
 
 Candidates for the live panel, and where the data comes from. Rows are the
@@ -101,14 +180,15 @@ and no-state constraints rule out.
 
 ## Backlog (ordered)
 
-1. `view --follow` — the organized transcript tailing the live session, for a
-   split pane beside `claude` (Claude Code owns its TUI; `statusLine` is the
-   only in-window extension point, so side-by-side is the answer)
-2. `find "query"` — search across all sessions with pretty result context
-3. "Suggested model" insights (the observability-flavored ghost of the cut
+Three of these were absorbed by the plugin plan above: `view --follow`
+shipped 2026-07-20, cross session search became `sessions --grep` in P1, and
+HTML export became `view --export html` in P1. What is left:
+
+1. "Suggested model" insights (the observability-flavored ghost of the cut
    reroute feature)
-4. HTML export
-5. Config file (only once flags demonstrably aren't enough)
+2. Tool failure rate on the statusline, the last gauge shaped metric
+3. NDJSON for `view --follow --json`, which currently exits 2
+4. Config file (only once flags demonstrably aren't enough)
 
 ## Standing rule
 

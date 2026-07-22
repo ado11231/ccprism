@@ -61,7 +61,7 @@ export function fmtWhen(iso: string | undefined, now = new Date()): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-// Wall clock with seconds, for the live watch stream where sub
+// Wall clock with seconds, for the compact live log where sub
 // minute cadence matters. fmtWhen stops at minutes on purpose.
 export function fmtClock(date: Date): string {
   const h = String(date.getHours()).padStart(2, "0");

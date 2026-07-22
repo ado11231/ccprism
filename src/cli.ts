@@ -5,7 +5,6 @@ import { runDoctor } from "./commands/doctor.js";
 import { runSessions } from "./commands/sessions.js";
 import { runStatusline } from "./commands/statusline.js";
 import { runView } from "./commands/view.js";
-import { runWatch } from "./commands/watch.js";
 import type { CommandFlags } from "./commands/load.js";
 
 // Help group headings. Live commands run beside a session in
@@ -25,6 +24,7 @@ interface RawOpts {
   full?: boolean;
   costs?: boolean;
   follow?: boolean;
+  compact?: boolean;
 }
 
 function toFlags(opts: RawOpts): CommandFlags {
@@ -77,17 +77,6 @@ export function buildProgram(): Command {
       });
     });
 
-  withGlobalFlags(program.command("watch"))
-    .helpGroup(LIVE)
-    .description("Tail a session and stream its cost as it changes")
-    .argument("[id]", "session id, unambiguous prefixes accepted")
-    .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
-      process.exitCode = await runWatch({
-        ...toFlags(command.optsWithGlobals() as RawOpts),
-        id,
-      });
-    });
-
   withGlobalFlags(
     program.command("sessions"),
   )
@@ -112,6 +101,7 @@ export function buildProgram(): Command {
     .option("--full", "expand raw commands, tool outputs, and thinking")
     .option("--costs", "per call cost badges on tool lines")
     .option("-f, --follow", "keep appending turns as the session grows")
+    .option("--compact", "with --follow, a cost log instead of the transcript")
     .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
       const opts = command.optsWithGlobals() as RawOpts;
       process.exitCode = await runView({
@@ -121,6 +111,7 @@ export function buildProgram(): Command {
         costs: opts.costs === true,
         ascii: opts.ascii === true,
         follow: opts.follow === true,
+        compact: opts.compact === true,
       });
     });
 
@@ -132,6 +123,28 @@ export function buildProgram(): Command {
         toFlags(command.optsWithGlobals() as RawOpts),
       );
     });
+
+  // watch became a mode of view. It is kept as a hidden forwarder so
+  // muscle memory and any scripts still work, and it says once on
+  // stderr what to type instead. Registered last and hidden, so it is
+  // out of --help and out of the way of the group ordering above.
+  const watch = withGlobalFlags(new Command("watch"))
+    .description("deprecated, now view --follow --compact")
+    .argument("[id]", "session id, unambiguous prefixes accepted")
+    .action(async (id: string | undefined, _opts: RawOpts, command: Command) => {
+      console.error("ccprism watch is now ccprism view --follow --compact");
+      const opts = command.optsWithGlobals() as RawOpts;
+      process.exitCode = await runView({
+        ...toFlags(opts),
+        id,
+        full: false,
+        costs: false,
+        ascii: opts.ascii === true,
+        follow: true,
+        compact: true,
+      });
+    });
+  program.addCommand(watch, { hidden: true });
 
   // Running ccprism with no command shows the dashboard.
   withGlobalFlags(program).action(async (opts: RawOpts) => {
@@ -148,7 +161,8 @@ export function buildProgram(): Command {
       "project and model.",
       "",
       "view --follow is the live form of view. It renders the session so",
-      "far, then appends turns as they arrive.",
+      "far, then appends turns as they arrive. Add --compact for a cost",
+      "log instead: one timestamped line each time the numbers move.",
     ].join("\n"),
   );
 
