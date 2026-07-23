@@ -178,6 +178,94 @@ statusline's stdin JSON, and `watch` tails a file with no host process feeding
 it. Carrying the number across would need a state file, which the read-only
 and no-state constraints rule out.
 
+## Candidates added 2026-07-23
+
+Seven ideas, checked against the code and against the 41 real logs in
+`~/.claude/projects` before being written down. Verdict first, evidence
+below.
+
+| # | Idea | Verdict |
+|---|---|---|
+| 1 | `ccprism top`, live view of every running session | Build as described |
+| 2 | Real diff rendering in `view --full` | Build as described |
+| 3 | Blocks report for the 5 hour window | Needs a workaround, and one decision |
+| 4 | `daily` / `weekly` / `monthly` with `--breakdown` | Adds to work already scheduled |
+| 5 | Notifications on idle or threshold | Needs a narrower scope, and one decision |
+| 6 | Tool level token stats | Adds to what already ships |
+| 7 | Cost modes, `auto` and `calculate` and `display` | Cannot be built, no data |
+
+Two decisions are open and are the user's to make. They block items 3 and 5,
+nothing else.
+
+- **Which 5 hour number wins.** The statusline shows the real percentage from
+  host stdin. A log derived one would be a second number that disagrees.
+- **Whether a terminal bell is a fair carve out** from the recorded cut of
+  budgets and alerts, given that `view --follow` is already a running process
+  and needs no daemon.
+
+The rest can start without asking anything. Suggested order when picking this
+up: item 2 first because the data is already there and it is self contained,
+then item 1 as the bigger piece, then 4 and 6 folded into the Phase 1 work
+they extend.
+
+**1. `ccprism top`, a live view of every running session.** The strongest of
+the batch and the cleanest fit. One foreground process polling the log
+directory, so no daemon, no state file, nothing written. Shows every session
+with recent activity as a row: cost, context fill, last activity, model.
+Builds directly on `src/commands/poll.ts`. The one thing to pin down is what
+counts as running, since the only signal available is file mtime. Pick a
+window, show it in the header, and let `--since` change it.
+
+**2. Real diff rendering in `view --full`.** Better data than expected: 28 of
+41 logs carry a `structuredPatch` on the Edit tool result, so the actual
+hunks are already in the log and do not have to be reconstructed from
+`old_string`. `render/transcript.ts` currently counts lines from
+`old_string` for the `+156 -23` label, so the label stays and the patch
+renders under it. Needs a line budget so one large edit cannot flood the
+transcript, the same shape as collapsed thinking.
+
+**3. Blocks report for the 5 hour window.** Buildable read only, with one
+honest limit. Grouping log entries into 5 hour windows and computing a burn
+rate needs nothing but timestamps and usage. The projection does not work
+the same way: the plan cap is not in the logs, so time to limit cannot be
+derived, only estimated against an assumed ceiling. There is also a
+collision to resolve first. The statusline already shows a real `five_hour`
+percentage that comes from the host on stdin, and a log derived percentage
+would be a second number that disagrees with it. Two numbers for the same
+thing is worse than one. Decide which wins where before building: the
+suggestion is that the report is honest about being an estimate, marks its
+numbers with `~` the way the context command will, and takes an explicit
+`--limit` rather than guessing the plan.
+
+**4. `daily`, `weekly`, and `monthly` reports with `--breakdown`.** Mostly
+already scheduled. The day and month aggregators exist from Phase 1, and the
+plugin plan already has dashboard 14 day rows and `--month` as the next task
+in P1. Treat this as an extension of that task rather than a separate one:
+same aggregation, standalone commands, plus a `--breakdown` flag for the per
+model split inside each row.
+
+**5. Notifications on idle or threshold.** Runs into the recorded decision to
+cut budgets and alerts because they need a daemon. That reasoning holds for
+alerts in general but not for this narrower case: inside `view --follow` the
+process is already running, so a terminal bell when a session goes idle or
+crosses a cost or context threshold costs no daemon and no state. Scope it
+to that. A desktop notification is a different thing, since it means
+shelling out to `osascript` or `notify-send`, and that is a new dependency
+shape rather than a flag.
+
+**6. Tool level token stats.** Largely shipped already. `src/cost/tools.ts`
+has `toolCategory` and the per category cost split, and the dashboard emits
+`byTool`. What is missing is tokens beside the cost and a place to read it
+outside `--json`. This is a surfacing job, not a new feature.
+
+**7. Cost modes, `auto` and `calculate` and `display`.** Parked, because the
+data is not here. Zero of the 41 local logs carry a `costUSD` field. The only
+match in the whole directory is the conversation that proposed the idea. It
+cannot be built or verified against real logs on this machine, which the
+standing work rhythm requires. The goal behind it is still worth serving:
+trust in the numbers belongs in `doctor`, which already knows which messages
+were unpriced and which models were unknown.
+
 ## Backlog (ordered)
 
 Three of these were absorbed by the plugin plan above: `view --follow`
